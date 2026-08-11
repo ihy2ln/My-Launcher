@@ -147,174 +147,195 @@ fun EditHomeScreen(
             useGradient = settings.wallpaperMode == WallpaperMode.GRADIENT,
         )
 
+        // Dim overlay for edit mode
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.28f)),
+        )
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .statusBarsPadding()
-                .padding(horizontal = 12.dp),
+                .padding(horizontal = 18.dp),
         ) {
-            EditToolbar(
-                palette = palette,
-                onDone = onDone,
-                onBackground = { showWallpaperSheet = true },
-                onSettings = onOpenSettings,
-            )
-
-            Text(
-                text = "Edit Home Screen",
-                color = palette.textPrimary,
-                fontSize = 18.sp,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
-            )
-            Text(
-                text = "Tap + to add apps, widgets, or groups. Long-press a module to style it.",
-                color = palette.textSecondary,
-                fontSize = 12.sp,
-                modifier = Modifier.padding(bottom = 12.dp),
-            )
-
-            Text("Module opacity", color = palette.textSecondary, fontSize = 12.sp)
-            Slider(
-                value = settings.moduleOpacity,
-                onValueChange = { value ->
-                    scope.launch { repository.updateSettings { it.copy(moduleOpacity = value) } }
-                },
-                valueRange = 0.1f..0.85f,
-                modifier = Modifier.fillMaxWidth(),
-            )
-
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(settings.homeColumns),
-                modifier = Modifier.weight(1f),
-                contentPadding = PaddingValues(bottom = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                userScrollEnabled = true,
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp, bottom = 10.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                items(layout.homeSlots.size) { index ->
-                    val style = layout.moduleStyles[index]
-                    val opacity = style?.opacity ?: settings.moduleOpacity
-                    when (val slot = layout.homeSlots[index]) {
-                        is HomeSlot.App -> {
-                            val app = findApp(apps, slot.key)
-                            ModulePlate(
-                                opacity = opacity,
-                                imageUri = style?.imageUri,
-                                videoUri = style?.videoUri,
-                                color = style?.color ?: 0xFF1A1A1A,
-                                saturation = style?.saturation ?: 0.2f,
-                                brightness = style?.brightness ?: 0.4f,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(84.dp)
-                                    .clickable { addTargetIndex = index },
-                            ) {
-                                if (app != null) {
-                                    AppIconView(
-                                        app = app,
-                                        settings = settings,
-                                        palette = palette,
-                                        onClick = { addTargetIndex = index },
-                                        onLongClick = { moduleEditIndex = index },
-                                        size = settings.iconSizeDp.dp,
-                                    )
+                TextButton(onClick = onDone) {
+                    Text("Done", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+                Text(
+                    text = "Edit home",
+                    color = Color.White,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Spacer(modifier = Modifier.size(64.dp))
+            }
+
+            // Zoomed panel chrome (Nova-style)
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(22.dp))
+                    .background(Color.White.copy(alpha = 0.12f))
+                    .padding(10.dp),
+            ) {
+                Column(modifier = Modifier.fillMaxSize()) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.CenterHorizontally)
+                            .size(28.dp)
+                            .clip(CircleShape)
+                            .background(Color.White.copy(alpha = 0.9f)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text("⌂", color = Color.Black, fontSize = 14.sp)
+                    }
+
+                    Text(
+                        text = "Tap + to add apps, widgets, or groups",
+                        color = Color.White.copy(0.75f),
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(top = 8.dp, bottom = 8.dp),
+                    )
+
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(settings.homeColumns),
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(bottom = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        userScrollEnabled = true,
+                    ) {
+                        items(layout.homeSlots.size) { index ->
+                            val style = layout.moduleStyles[index]
+                            val opacity = style?.opacity ?: settings.moduleOpacity
+                            when (val slot = layout.homeSlots[index]) {
+                                is HomeSlot.App -> {
+                                    val app = findApp(apps, slot.key)
+                                    ModulePlate(
+                                        opacity = opacity,
+                                        imageUri = style?.imageUri,
+                                        videoUri = style?.videoUri,
+                                        color = style?.color ?: 0xFF1A1A1A,
+                                        saturation = style?.saturation ?: 0.2f,
+                                        brightness = style?.brightness ?: 0.4f,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(84.dp)
+                                            .clickable { addTargetIndex = index },
+                                    ) {
+                                        if (app != null) {
+                                            AppIconView(
+                                                app = app,
+                                                settings = settings,
+                                                palette = palette,
+                                                onClick = { addTargetIndex = index },
+                                                onLongClick = { moduleEditIndex = index },
+                                                size = settings.iconSizeDp.dp,
+                                            )
+                                        }
+                                    }
+                                }
+                                is HomeSlot.Folder -> {
+                                    val folder = layout.folders[slot.folderId]
+                                    ModulePlate(
+                                        opacity = opacity,
+                                        imageUri = style?.imageUri,
+                                        videoUri = style?.videoUri,
+                                        color = style?.color ?: 0xFF1A1A1A,
+                                        saturation = style?.saturation ?: 0.2f,
+                                        brightness = style?.brightness ?: 0.4f,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(84.dp),
+                                    ) {
+                                        if (folder != null) {
+                                            FolderIconView(
+                                                folder = folder,
+                                                previewApps = folder.appKeys.mapNotNull { findApp(apps, it) },
+                                                settings = settings,
+                                                palette = palette,
+                                                onClick = { addTargetIndex = index },
+                                                onLongClick = { moduleEditIndex = index },
+                                            )
+                                        }
+                                    }
+                                }
+                                is HomeSlot.Widget -> {
+                                    ModulePlate(
+                                        opacity = opacity,
+                                        imageUri = style?.imageUri,
+                                        videoUri = style?.videoUri,
+                                        color = style?.color ?: 0xFF1A1A1A,
+                                        saturation = style?.saturation ?: 0.2f,
+                                        brightness = style?.brightness ?: 0.4f,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(84.dp),
+                                    ) {
+                                        HomeWidgetView(
+                                            type = slot.type,
+                                            palette = palette,
+                                            size = settings.iconSizeDp.dp,
+                                            onClick = { addTargetIndex = index },
+                                        )
+                                    }
+                                }
+                                null -> {
+                                    ModulePlate(
+                                        opacity = opacity,
+                                        imageUri = style?.imageUri,
+                                        videoUri = style?.videoUri,
+                                        color = style?.color ?: 0xFF1A1A1A,
+                                        saturation = style?.saturation ?: 0.2f,
+                                        brightness = style?.brightness ?: 0.4f,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(84.dp)
+                                            .clickable { addTargetIndex = index },
+                                    ) {
+                                        Text(
+                                            text = "+",
+                                            color = Color.White.copy(alpha = 0.55f),
+                                            fontSize = 28.sp,
+                                            modifier = Modifier.clickable(
+                                                onClick = { addTargetIndex = index },
+                                            ),
+                                        )
+                                    }
                                 }
                             }
-                        }
-                        is HomeSlot.Folder -> {
-                            val folder = layout.folders[slot.folderId]
-                            ModulePlate(
-                                opacity = opacity,
-                                imageUri = style?.imageUri,
-                                videoUri = style?.videoUri,
-                                color = style?.color ?: 0xFF1A1A1A,
-                                saturation = style?.saturation ?: 0.2f,
-                                brightness = style?.brightness ?: 0.4f,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(84.dp),
-                            ) {
-                                if (folder != null) {
-                                    FolderIconView(
-                                        folder = folder,
-                                        previewApps = folder.appKeys.mapNotNull { findApp(apps, it) },
-                                        settings = settings,
-                                        palette = palette,
-                                        onClick = { addTargetIndex = index },
-                                        onLongClick = { moduleEditIndex = index },
-                                    )
-                                }
-                            }
-                        }
-                        is HomeSlot.Widget -> {
-                            ModulePlate(
-                                opacity = opacity,
-                                imageUri = style?.imageUri,
-                                videoUri = style?.videoUri,
-                                color = style?.color ?: 0xFF1A1A1A,
-                                saturation = style?.saturation ?: 0.2f,
-                                brightness = style?.brightness ?: 0.4f,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(84.dp),
-                            ) {
-                                HomeWidgetView(
-                                    type = slot.type,
-                                    palette = palette,
-                                    size = settings.iconSizeDp.dp,
-                                    onClick = { addTargetIndex = index },
-                                )
-                            }
-                        }
-                        null -> {
-                            ModulePlate(
-                                opacity = opacity,
-                                imageUri = style?.imageUri,
-                                videoUri = style?.videoUri,
-                                color = style?.color ?: 0xFF1A1A1A,
-                                saturation = style?.saturation ?: 0.2f,
-                                brightness = style?.brightness ?: 0.4f,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(84.dp)
-                                    .clickable { addTargetIndex = index },
-                            ) {
-                                Text(
-                                    text = "+",
-                                    color = Color.White.copy(alpha = 0.55f),
-                                    fontSize = 28.sp,
-                                    modifier = Modifier.clickable(
-                                        onClick = { addTargetIndex = index },
-                                    ),
-                                )
-                            }
-                            // Long-press empty via separate dialog trigger button area
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(0.dp),
-                            )
                         }
                     }
                 }
             }
 
-            // Long-press helper row for selected empty modules via tap-and-hold alternative
+            // Nova-style bottom customization bar
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 16.dp),
+                    .padding(top = 14.dp, bottom = 22.dp)
+                    .clip(RoundedCornerShape(22.dp))
+                    .background(Color.Black.copy(alpha = 0.45f))
+                    .padding(vertical = 14.dp),
                 horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Chip("Style last +", palette) {
+                EditBarAction("Wallpapers", "▣") { showWallpaperSheet = true }
+                EditBarAction("Widgets") {
                     val empty = layout.homeSlots.indexOfFirst { it == null }
-                    if (empty >= 0) moduleEditIndex = empty
+                    if (empty >= 0) addTargetIndex = empty
                 }
-                Chip("Clear cell", palette) {
-                    val filled = layout.homeSlots.indexOfLast { it != null }
-                    if (filled >= 0) scope.launch { repository.setHomeSlot(filled, null) }
-                }
+                EditBarAction("Settings", "⚙", onOpenSettings)
             }
         }
     }
@@ -479,6 +500,20 @@ fun EditHomeScreen(
                 TextButton(onClick = { createGroupIndex = null }) { Text("Cancel") }
             },
         )
+    }
+}
+
+@Composable
+private fun EditBarAction(label: String, glyph: String = "◇", onClick: () -> Unit) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .clip(RoundedCornerShape(14.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 18.dp, vertical = 4.dp),
+    ) {
+        Text(glyph, color = Color.White, fontSize = 22.sp)
+        Text(label, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Medium)
     }
 }
 

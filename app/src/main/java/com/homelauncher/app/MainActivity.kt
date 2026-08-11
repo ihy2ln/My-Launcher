@@ -53,7 +53,10 @@ import com.homelauncher.app.model.GestureAction
 import com.homelauncher.app.model.HomeSlot
 import com.homelauncher.app.model.LauncherSettings
 import com.homelauncher.app.model.defaultLayout
+import com.homelauncher.app.ui.components.AppActionSheet
 import com.homelauncher.app.ui.components.AppIconView
+import com.homelauncher.app.ui.components.openAppInfo
+import com.homelauncher.app.ui.components.openUninstall
 import com.homelauncher.app.ui.drawer.AppDrawer
 import com.homelauncher.app.ui.home.EditHomeScreen
 import com.homelauncher.app.ui.home.HomeScreen
@@ -192,7 +195,10 @@ fun HomeLauncherApp() {
                             returnToEditAfterPick = true
                             overlay = Overlay.Drawer
                         },
-                        onOpenSettings = { overlay = Overlay.Settings },
+                        onOpenSettings = {
+                            returnToEditAfterPick = true
+                            overlay = Overlay.Settings
+                        },
                     )
                 }
 
@@ -285,7 +291,14 @@ fun HomeLauncherApp() {
                         settings = settings,
                         palette = palette,
                         repository = repository,
-                        onBack = { overlay = Overlay.None },
+                        onBack = {
+                            overlay = if (returnToEditAfterPick) {
+                                returnToEditAfterPick = false
+                                Overlay.EditHome
+                            } else {
+                                Overlay.None
+                            }
+                        },
                     )
                 }
             }
@@ -424,36 +437,54 @@ fun HomeLauncherApp() {
 
         appActionTarget?.let { (index, app) ->
             val folders = layout.folders.values.toList()
-            AlertDialog(
-                onDismissRequest = { appActionTarget = null },
-                title = { Text(app.label) },
-                text = { Text("Move this app, add it to a folder, or remove it from the home screen.") },
-                confirmButton = {
-                    Column {
-                        TextButton(onClick = {
-                            appActionTarget = null
-                            launchApp(context, app)
-                        }) { Text("Open") }
-                        TextButton(onClick = {
-                            appActionTarget = null
-                            if (folders.isEmpty()) {
-                                // Create a new folder with just this app at its slot
-                                scope.launch {
-                                    repository.createFolder(app.label, listOf(app.key), index)
-                                }
-                            } else {
-                                moveToFolderApp = index to app
-                            }
-                        }) { Text(if (folders.isEmpty()) "Create folder" else "Move to folder…") }
-                        TextButton(onClick = {
-                            appActionTarget = null
-                            removeTarget = PlacementTarget.Home(index)
-                        }) { Text("Remove from home") }
+            AppActionSheet(
+                app = app,
+                palette = palette,
+                iconShape = settings.iconShape,
+                onDismiss = { appActionTarget = null },
+                onOpen = {
+                    appActionTarget = null
+                    launchApp(context, app)
+                },
+                onFavorite = {
+                    scope.launch {
+                        val dockIndex = layout.dockSlots.indexOfFirst { it == null }
+                        if (dockIndex >= 0) repository.setDockSlot(dockIndex, HomeSlot.App(app.key))
+                    }
+                    appActionTarget = null
+                },
+                onAddToCategory = {
+                    appMenuTarget = app
+                    groupDialog = true
+                    appActionTarget = null
+                },
+                onMoveToFolder = {
+                    appActionTarget = null
+                    if (folders.isEmpty()) {
+                        scope.launch {
+                            repository.createFolder(app.label, listOf(app.key), index)
+                        }
+                    } else {
+                        moveToFolderApp = index to app
                     }
                 },
-                dismissButton = {
-                    TextButton(onClick = { appActionTarget = null }) { Text("Cancel") }
+                onAppInfo = {
+                    appActionTarget = null
+                    openAppInfo(context, app.packageName)
                 },
+                onUninstall = {
+                    appActionTarget = null
+                    openUninstall(context, app.packageName)
+                },
+                onRemoveFromHome = {
+                    appActionTarget = null
+                    removeTarget = PlacementTarget.Home(index)
+                },
+                onLauncherSettings = {
+                    appActionTarget = null
+                    overlay = Overlay.Settings
+                },
+                showRemove = true,
             )
         }
 

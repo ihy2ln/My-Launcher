@@ -10,10 +10,14 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyHorizontalGrid
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -23,6 +27,7 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -79,6 +84,8 @@ fun AppDrawer(
     val tabs = remember(groups) { listOf("All") + groups.map { it.title } }
     val pagerState = rememberPagerState(pageCount = { tabs.size.coerceAtLeast(1) })
     val useTabs = groups.isNotEmpty() && query.isBlank()
+    val drawerBg = if (palette.isDark) palette.drawerBackground else Color.White
+    val searchBg = if (palette.isDark) palette.searchBackground else Color(0xFFD7ECF8)
 
     Surface(
         modifier = Modifier
@@ -88,43 +95,37 @@ fun AppDrawer(
                     if (dragAmount > 24f) onClose()
                 }
             },
-        color = palette.drawerBackground,
+        color = drawerBg,
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .statusBarsPadding(),
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Text("All apps", color = palette.textPrimary, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
-                if (placementHint != null) {
+            if (placementHint != null) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(placementHint, color = palette.accent, fontSize = 13.sp, modifier = Modifier.weight(1f))
                     TextButton(onClick = onDismissPlacement) {
                         Text("Cancel", color = palette.accent)
                     }
                 }
             }
 
-            if (placementHint != null) {
-                Text(
-                    text = placementHint,
-                    color = palette.accent,
-                    fontSize = 13.sp,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                )
-            }
-
             if (settings.searchBarPosition == SearchBarPosition.TOP) {
                 SearchField(
                     value = query,
-                    palette = palette,
+                    background = searchBg,
+                    textColor = palette.textPrimary,
+                    hintColor = palette.textSecondary,
+                    accent = palette.accent,
                     onValueChange = { query = it },
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
                 )
             }
 
@@ -132,7 +133,14 @@ fun AppDrawer(
                 MicroResultCard(result, palette)
             }
 
-            // Always show tab strip when drawer groups exist (Games, etc.)
+            if (settings.showDrawerCards && query.isBlank() && placementHint == null) {
+                DrawerMediaCard(palette = palette)
+                HorizontalDivider(
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+                    color = palette.textSecondary.copy(alpha = 0.2f),
+                )
+            }
+
             if (groups.isNotEmpty()) {
                 Row(
                     modifier = Modifier
@@ -148,7 +156,6 @@ fun AppDrawer(
                                 .clip(RoundedCornerShape(18.dp))
                                 .background(if (selected) palette.accent else palette.searchBackground)
                                 .clickable {
-                                    // Clear search so tab content is shown, then scroll pager
                                     query = ""
                                     scope.launch {
                                         pagerState.animateScrollToPage(index)
@@ -215,10 +222,67 @@ fun AppDrawer(
             if (settings.searchBarPosition == SearchBarPosition.BOTTOM) {
                 SearchField(
                     value = query,
-                    palette = palette,
+                    background = searchBg,
+                    textColor = palette.textPrimary,
+                    hintColor = palette.textSecondary,
+                    accent = palette.accent,
                     onValueChange = { query = it },
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DrawerMediaCard(palette: LauncherPalette) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .clip(RoundedCornerShape(20.dp))
+            .background(Color(0xFF1DB954))
+            .padding(16.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("♪", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Now playing", color = Color.White, fontWeight = FontWeight.SemiBold)
+            Spacer(modifier = Modifier.weight(1f))
+            Text("Card", color = Color.White.copy(0.8f), fontSize = 12.sp)
+        }
+        Spacer(modifier = Modifier.height(12.dp))
+        Text("Something Comforting", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+        Text("Porter Robinson", color = Color.White.copy(0.85f), fontSize = 13.sp)
+        Spacer(modifier = Modifier.height(10.dp))
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(4.dp)
+                .clip(RoundedCornerShape(2.dp))
+                .background(Color.White.copy(0.35f)),
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(0.42f)
+                    .height(4.dp)
+                    .background(Color.White),
+            )
+        }
+        Spacer(modifier = Modifier.height(12.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("Get suggestions", color = Color.White.copy(0.85f), fontSize = 12.sp)
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(Color.White)
+                    .padding(horizontal = 14.dp, vertical = 6.dp),
+            ) {
+                Text("Open", color = Color(0xFF1DB954), fontSize = 12.sp, fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -262,7 +326,10 @@ private fun AppGrid(
 @Composable
 private fun SearchField(
     value: String,
-    palette: LauncherPalette,
+    background: Color,
+    textColor: Color,
+    hintColor: Color,
+    accent: Color,
     onValueChange: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -270,18 +337,24 @@ private fun SearchField(
         value = value,
         onValueChange = onValueChange,
         singleLine = true,
-        textStyle = TextStyle(color = palette.textPrimary, fontSize = 16.sp),
-        cursorBrush = SolidColor(palette.accent),
+        textStyle = TextStyle(color = textColor, fontSize = 16.sp),
+        cursorBrush = SolidColor(accent),
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(24.dp))
-            .background(palette.searchBackground)
-            .padding(horizontal = 18.dp, vertical = 12.dp),
+            .clip(RoundedCornerShape(28.dp))
+            .background(background)
+            .padding(horizontal = 18.dp, vertical = 14.dp),
         decorationBox = { inner ->
-            if (value.isEmpty()) {
-                Text("Search apps, calc, units...", color = palette.textSecondary, fontSize = 16.sp)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("▦", color = hintColor, fontSize = 14.sp)
+                Spacer(modifier = Modifier.width(10.dp))
+                Box(modifier = Modifier.weight(1f)) {
+                    if (value.isEmpty()) {
+                        Text("Search apps.", color = hintColor, fontSize = 16.sp)
+                    }
+                    inner()
+                }
             }
-            inner()
         },
     )
 }

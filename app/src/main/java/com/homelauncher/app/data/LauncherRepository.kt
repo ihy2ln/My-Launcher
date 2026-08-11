@@ -20,6 +20,7 @@ import com.homelauncher.app.model.LauncherLayout
 import com.homelauncher.app.model.LauncherSettings
 import com.homelauncher.app.model.ModuleStyle
 import com.homelauncher.app.model.SearchBarPosition
+import com.homelauncher.app.model.ScrollEffect
 import com.homelauncher.app.model.ThemeMode
 import com.homelauncher.app.model.WallpaperMode
 import com.homelauncher.app.model.WidgetType
@@ -182,12 +183,14 @@ class LauncherRepository(private val context: Context) {
                 put("drawerColumns", s.drawerColumns)
                 put("drawerScroll", s.drawerScroll.ordinal)
                 put("searchBarPosition", s.searchBarPosition.ordinal)
+                put("showDrawerCards", s.showDrawerCards)
                 put("wallpaperStyle", s.wallpaperStyle)
                 put("wallpaperMode", s.wallpaperMode.ordinal)
                 put("wallpaperColor", s.wallpaperColor)
                 put("wallpaperImageUri", s.wallpaperImageUri ?: "")
                 put("wallpaperVideoUri", s.wallpaperVideoUri ?: "")
                 put("moduleOpacity", s.moduleOpacity.toDouble())
+                put("scrollEffect", s.scrollEffect.ordinal)
                 put("swipeUp", s.swipeUp.ordinal)
                 put("swipeDown", s.swipeDown.ordinal)
                 put("doubleTap", s.doubleTap.ordinal)
@@ -232,12 +235,14 @@ class LauncherRepository(private val context: Context) {
                     drawerColumns = settingsObj.optInt("drawerColumns", 4),
                     drawerScroll = DrawerScroll.entries.getOrElse(settingsObj.optInt("drawerScroll", 0)) { DrawerScroll.VERTICAL },
                     searchBarPosition = SearchBarPosition.entries.getOrElse(settingsObj.optInt("searchBarPosition", 0)) { SearchBarPosition.TOP },
+                    showDrawerCards = settingsObj.optBoolean("showDrawerCards", true),
                     wallpaperStyle = settingsObj.optInt("wallpaperStyle", 4),
                     wallpaperMode = WallpaperMode.entries.getOrElse(settingsObj.optInt("wallpaperMode", WallpaperMode.COLOR.ordinal)) { WallpaperMode.COLOR },
                     wallpaperColor = settingsObj.optLong("wallpaperColor", 0xFF3A4F50),
                     wallpaperImageUri = settingsObj.optString("wallpaperImageUri").ifBlank { null },
                     wallpaperVideoUri = settingsObj.optString("wallpaperVideoUri").ifBlank { null },
-                    moduleOpacity = settingsObj.optDouble("moduleOpacity", 0.35).toFloat(),
+                    moduleOpacity = settingsObj.optDouble("moduleOpacity", 0.45).toFloat(),
+                    scrollEffect = ScrollEffect.entries.getOrElse(settingsObj.optInt("scrollEffect", ScrollEffect.CUBE.ordinal)) { ScrollEffect.CUBE },
                     swipeUp = GestureAction.entries.getOrElse(settingsObj.optInt("swipeUp", GestureAction.OPEN_DRAWER.ordinal)) { GestureAction.OPEN_DRAWER },
                     swipeDown = GestureAction.entries.getOrElse(settingsObj.optInt("swipeDown", GestureAction.OPEN_SEARCH.ordinal)) { GestureAction.OPEN_SEARCH },
                     doubleTap = GestureAction.entries.getOrElse(settingsObj.optInt("doubleTap", GestureAction.NONE.ordinal)) { GestureAction.NONE },
@@ -290,12 +295,14 @@ class LauncherRepository(private val context: Context) {
         val DRAWER_COLS = intPreferencesKey("drawer_cols")
         val DRAWER_SCROLL = intPreferencesKey("drawer_scroll")
         val SEARCH_POS = intPreferencesKey("search_pos")
+        val SHOW_DRAWER_CARDS = booleanPreferencesKey("show_drawer_cards")
         val WALLPAPER = intPreferencesKey("wallpaper")
         val WALLPAPER_MODE = intPreferencesKey("wallpaper_mode")
         val WALLPAPER_COLOR = longPreferencesKey("wallpaper_color")
         val WALLPAPER_IMAGE = stringPreferencesKey("wallpaper_image")
         val WALLPAPER_VIDEO = stringPreferencesKey("wallpaper_video")
         val MODULE_OPACITY = floatPreferencesKey("module_opacity")
+        val SCROLL_EFFECT = intPreferencesKey("scroll_effect")
         val SWIPE_UP = intPreferencesKey("swipe_up")
         val SWIPE_DOWN = intPreferencesKey("swipe_down")
         val DOUBLE_TAP = intPreferencesKey("double_tap")
@@ -325,12 +332,14 @@ class LauncherRepository(private val context: Context) {
             drawerColumns = this[Keys.DRAWER_COLS] ?: 4,
             drawerScroll = DrawerScroll.entries.getOrElse(this[Keys.DRAWER_SCROLL] ?: 0) { DrawerScroll.VERTICAL },
             searchBarPosition = SearchBarPosition.entries.getOrElse(this[Keys.SEARCH_POS] ?: 0) { SearchBarPosition.TOP },
+            showDrawerCards = this[Keys.SHOW_DRAWER_CARDS] ?: true,
             wallpaperStyle = this[Keys.WALLPAPER] ?: 4,
             wallpaperMode = WallpaperMode.entries.getOrElse(this[Keys.WALLPAPER_MODE] ?: WallpaperMode.COLOR.ordinal) { WallpaperMode.COLOR },
             wallpaperColor = this[Keys.WALLPAPER_COLOR] ?: 0xFF3A4F50,
             wallpaperImageUri = this[Keys.WALLPAPER_IMAGE],
             wallpaperVideoUri = this[Keys.WALLPAPER_VIDEO],
-            moduleOpacity = this[Keys.MODULE_OPACITY] ?: 0.35f,
+            moduleOpacity = this[Keys.MODULE_OPACITY] ?: 0.45f,
+            scrollEffect = ScrollEffect.entries.getOrElse(this[Keys.SCROLL_EFFECT] ?: ScrollEffect.CUBE.ordinal) { ScrollEffect.CUBE },
             swipeUp = GestureAction.entries.getOrElse(this[Keys.SWIPE_UP] ?: GestureAction.OPEN_DRAWER.ordinal) { GestureAction.OPEN_DRAWER },
             swipeDown = GestureAction.entries.getOrElse(this[Keys.SWIPE_DOWN] ?: GestureAction.OPEN_SEARCH.ordinal) { GestureAction.OPEN_SEARCH },
             doubleTap = GestureAction.entries.getOrElse(this[Keys.DOUBLE_TAP] ?: GestureAction.NONE.ordinal) { GestureAction.NONE },
@@ -353,12 +362,14 @@ class LauncherRepository(private val context: Context) {
             prefs[Keys.DRAWER_COLS] = s.drawerColumns
             prefs[Keys.DRAWER_SCROLL] = s.drawerScroll.ordinal
             prefs[Keys.SEARCH_POS] = s.searchBarPosition.ordinal
+            prefs[Keys.SHOW_DRAWER_CARDS] = s.showDrawerCards
             prefs[Keys.WALLPAPER] = s.wallpaperStyle
             prefs[Keys.WALLPAPER_MODE] = s.wallpaperMode.ordinal
             prefs[Keys.WALLPAPER_COLOR] = s.wallpaperColor
             if (s.wallpaperImageUri == null) prefs.remove(Keys.WALLPAPER_IMAGE) else prefs[Keys.WALLPAPER_IMAGE] = s.wallpaperImageUri
             if (s.wallpaperVideoUri == null) prefs.remove(Keys.WALLPAPER_VIDEO) else prefs[Keys.WALLPAPER_VIDEO] = s.wallpaperVideoUri
             prefs[Keys.MODULE_OPACITY] = s.moduleOpacity
+            prefs[Keys.SCROLL_EFFECT] = s.scrollEffect.ordinal
             prefs[Keys.SWIPE_UP] = s.swipeUp.ordinal
             prefs[Keys.SWIPE_DOWN] = s.swipeDown.ordinal
             prefs[Keys.DOUBLE_TAP] = s.doubleTap.ordinal

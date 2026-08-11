@@ -38,6 +38,14 @@ enum class WallpaperMode {
     VIDEO,
 }
 
+enum class ScrollEffect {
+    SIMPLE,
+    CUBE,
+    CARD_STACK,
+    TABLET,
+    REVOLVING_DOOR,
+}
+
 data class LauncherSettings(
     val themeMode: ThemeMode = ThemeMode.DARK,
     val accentColor: Long = 0xFF82B1FF,
@@ -51,15 +59,17 @@ data class LauncherSettings(
     val homeRows: Int = 6,
     val dockSlots: Int = 6,
     val dockBackgroundAlpha: Float = 0.45f,
-    val drawerColumns: Int = 4,
+    val drawerColumns: Int = 5,
     val drawerScroll: DrawerScroll = DrawerScroll.VERTICAL,
     val searchBarPosition: SearchBarPosition = SearchBarPosition.TOP,
+    val showDrawerCards: Boolean = true,
     val wallpaperStyle: Int = 4,
     val wallpaperMode: WallpaperMode = WallpaperMode.COLOR,
     val wallpaperColor: Long = 0xFF3A4F50,
     val wallpaperImageUri: String? = null,
     val wallpaperVideoUri: String? = null,
     val moduleOpacity: Float = 0.45f,
+    val scrollEffect: ScrollEffect = ScrollEffect.CUBE,
     val swipeUp: GestureAction = GestureAction.OPEN_DRAWER,
     val swipeDown: GestureAction = GestureAction.OPEN_SEARCH,
     val doubleTap: GestureAction = GestureAction.NONE,
