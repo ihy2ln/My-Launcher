@@ -59,7 +59,7 @@ data class LauncherSettings(
     val wallpaperColor: Long = 0xFF3A4F50,
     val wallpaperImageUri: String? = null,
     val wallpaperVideoUri: String? = null,
-    val moduleOpacity: Float = 0.35f,
+    val moduleOpacity: Float = 0.45f,
     val swipeUp: GestureAction = GestureAction.OPEN_DRAWER,
     val swipeDown: GestureAction = GestureAction.OPEN_SEARCH,
     val doubleTap: GestureAction = GestureAction.NONE,
@@ -79,7 +79,10 @@ data class DrawerGroup(
 )
 
 data class ModuleStyle(
-    val opacity: Float = 0.35f,
+    val opacity: Float = 0.45f,
+    val color: Long = 0xFF1A1A1A,
+    val saturation: Float = 0.2f,
+    val brightness: Float = 0.35f,
     val imageUri: String? = null,
     val videoUri: String? = null,
 )

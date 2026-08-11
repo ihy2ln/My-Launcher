@@ -409,6 +409,9 @@ class LauncherRepository(private val context: Context) {
                     index.toString(),
                     JSONObject().apply {
                         put("opacity", style.opacity.toDouble())
+                        put("color", style.color)
+                        put("saturation", style.saturation.toDouble())
+                        put("brightness", style.brightness.toDouble())
                         put("imageUri", style.imageUri ?: "")
                         put("videoUri", style.videoUri ?: "")
                     },
@@ -427,7 +430,10 @@ class LauncherRepository(private val context: Context) {
                         put(
                             key.toInt(),
                             ModuleStyle(
-                                opacity = item.optDouble("opacity", 0.35).toFloat(),
+                                opacity = item.optDouble("opacity", 0.45).toFloat(),
+                                color = item.optLong("color", 0xFF1A1A1A),
+                                saturation = item.optDouble("saturation", 0.2).toFloat(),
+                                brightness = item.optDouble("brightness", 0.35).toFloat(),
                                 imageUri = item.optString("imageUri").ifBlank { null },
                                 videoUri = item.optString("videoUri").ifBlank { null },
                             ),

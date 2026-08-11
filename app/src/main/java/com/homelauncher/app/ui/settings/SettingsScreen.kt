@@ -49,6 +49,8 @@ import com.homelauncher.app.model.IconShape
 import com.homelauncher.app.model.LauncherSettings
 import com.homelauncher.app.model.SearchBarPosition
 import com.homelauncher.app.model.ThemeMode
+import com.homelauncher.app.model.WallpaperMode
+import com.homelauncher.app.ui.components.ColorWheelPicker
 import com.homelauncher.app.ui.theme.LauncherPalette
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -64,6 +66,37 @@ fun SettingsScreen(
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     var message by remember { mutableStateOf<String?>(null) }
+
+    val takePersistable = { uri: Uri ->
+        runCatching {
+            context.contentResolver.takePersistableUriPermission(
+                uri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION,
+            )
+        }
+        uri.toString()
+    }
+
+    val pickWallpaperImage = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            val path = takePersistable(uri)
+            scope.launch {
+                repository.updateSettings {
+                    it.copy(wallpaperMode = WallpaperMode.IMAGE, wallpaperImageUri = path)
+                }
+            }
+        }
+    }
+    val pickWallpaperVideo = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            val path = takePersistable(uri)
+            scope.launch {
+                repository.updateSettings {
+                    it.copy(wallpaperMode = WallpaperMode.VIDEO, wallpaperVideoUri = path)
+                }
+            }
+        }
+    }
 
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json"),
@@ -144,9 +177,39 @@ fun SettingsScreen(
             AccentPicker(selected = settings.accentColor) { color ->
                 update { it.copy(accentColor = color) }
             }
-            Text("Wallpaper style", color = palette.textPrimary, fontSize = 14.sp, modifier = Modifier.padding(top = 8.dp))
+
+            Text("Background color", color = palette.textPrimary, fontSize = 14.sp, modifier = Modifier.padding(top = 8.dp))
+            ColorWheelPicker(
+                color = settings.wallpaperColor,
+                onColorChange = { color ->
+                    update {
+                        it.copy(
+                            wallpaperMode = WallpaperMode.COLOR,
+                            wallpaperColor = color,
+                        )
+                    }
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(280.dp),
+            )
+
+            Text("Background media", color = palette.textPrimary, fontSize = 14.sp, modifier = Modifier.padding(top = 8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ActionChip("Picture", palette) { pickWallpaperImage.launch(arrayOf("image/*")) }
+                ActionChip("Video", palette) { pickWallpaperVideo.launch(arrayOf("video/*")) }
+                ActionChip("Solid color", palette) {
+                    update { it.copy(wallpaperMode = WallpaperMode.COLOR) }
+                }
+            }
+
+            SliderRow("Default module opacity", settings.moduleOpacity, 0.15f, 0.9f, palette) {
+                update { s -> s.copy(moduleOpacity = it) }
+            }
+
+            Text("Gradient presets", color = palette.textPrimary, fontSize = 14.sp, modifier = Modifier.padding(top = 8.dp))
             WallpaperPicker(selected = settings.wallpaperStyle) { style ->
-                update { it.copy(wallpaperStyle = style) }
+                update { it.copy(wallpaperStyle = style, wallpaperMode = WallpaperMode.GRADIENT) }
             }
 
             SectionTitle("Icons", palette)
@@ -217,7 +280,7 @@ fun SettingsScreen(
 
             androidx.compose.foundation.layout.Spacer(modifier = Modifier.height(32.dp))
             Text(
-                text = "Home Launcher - Nova-inspired\nv0.3.0",
+                text = "Home Launcher - Nova-inspired\nv0.5.0",
                 color = palette.textSecondary,
                 fontSize = 12.sp,
                 modifier = Modifier.padding(bottom = 24.dp),
@@ -387,5 +450,18 @@ private fun ActionRow(title: String, palette: LauncherPalette, onClick: () -> Un
             .padding(16.dp),
     ) {
         Text(title, color = palette.textPrimary, fontSize = 15.sp)
+    }
+}
+
+@Composable
+private fun ActionChip(label: String, palette: LauncherPalette, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(20.dp))
+            .background(palette.searchBackground)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+    ) {
+        Text(label, color = palette.textPrimary, fontSize = 13.sp)
     }
 }

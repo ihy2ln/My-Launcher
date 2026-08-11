@@ -130,6 +130,17 @@ fun ColorWheelPicker(
             }
         }
 
+        Text("Saturation", color = Color.White.copy(0.7f), fontSize = 12.sp)
+        Slider(
+            value = saturation,
+            onValueChange = {
+                saturation = it
+                emit()
+            },
+            valueRange = 0f..1f,
+            modifier = Modifier.fillMaxWidth(),
+        )
+
         Text("Brightness", color = Color.White.copy(0.7f), fontSize = 12.sp)
         Slider(
             value = value,
@@ -158,6 +169,7 @@ fun WallpaperBackdrop(
     useImage: Boolean,
     useVideo: Boolean,
     gradientFallback: Brush,
+    useGradient: Boolean = false,
 ) {
     when {
         useVideo && !videoUri.isNullOrBlank() -> {
@@ -168,6 +180,7 @@ fun WallpaperBackdrop(
             UriImage(uri = imageUri, modifier = Modifier.fillMaxSize())
             Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.2f)))
         }
+        useGradient -> Box(modifier = Modifier.fillMaxSize().background(gradientFallback))
         else -> Box(modifier = Modifier.fillMaxSize().background(color.toComposeColor()))
     }
 }
@@ -231,12 +244,20 @@ fun ModulePlate(
     imageUri: String?,
     videoUri: String?,
     modifier: Modifier = Modifier,
+    color: Long = 0xFF1A1A1A,
+    saturation: Float = 0.2f,
+    brightness: Float = 0.35f,
     content: @Composable () -> Unit,
 ) {
+    val base = color.toComposeColor()
+    val hsv = rgbToHsv(base)
+    val tint = hsvToColor(hsv[0], saturation.coerceIn(0f, 1f), brightness.coerceIn(0.05f, 1f))
+        .copy(alpha = opacity.coerceIn(0.15f, 0.95f))
+
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(16.dp))
-            .background(Color.Black.copy(alpha = opacity.coerceIn(0.05f, 0.9f))),
+            .background(tint),
         contentAlignment = Alignment.Center,
     ) {
         when {
@@ -252,6 +273,10 @@ fun ModulePlate(
         content()
     }
 }
+
+/** Public HSV helpers for module styling. */
+fun moduleRgbToHsv(color: Color): FloatArray = rgbToHsv(color)
+fun moduleHsvToColor(h: Float, s: Float, v: Float): Color = hsvToColor(h, s, v)
 
 private fun rgbToHsv(color: Color): FloatArray {
     val r = color.red

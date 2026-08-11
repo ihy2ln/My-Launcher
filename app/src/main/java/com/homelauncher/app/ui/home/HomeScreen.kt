@@ -109,6 +109,7 @@ fun HomeScreen(
             useImage = settings.wallpaperMode == WallpaperMode.IMAGE,
             useVideo = settings.wallpaperMode == WallpaperMode.VIDEO,
             gradientFallback = palette.wallpaper,
+            useGradient = settings.wallpaperMode == WallpaperMode.GRADIENT,
         )
 
         Column(
@@ -136,11 +137,11 @@ fun HomeScreen(
                         folders = layout.folders,
                         settings = settings,
                         palette = palette,
-                        showEmpty = false,
+                        showEmpty = true,
                         onLaunch = onLaunch,
                         onOpenFolder = onOpenFolder,
                         onWidgetClick = onWidgetClick,
-                        onEmpty = { onEmptyHomeSlot(index) },
+                        onEmpty = { onEditHome() },
                         onLongPress = { onLongPressHome(index) },
                     )
                 }
@@ -223,18 +224,22 @@ fun HomeCell(
 @Composable
 private fun EmptyModule(opacity: Float, style: ModuleStyle?, onClick: () -> Unit) {
     ModulePlate(
-        opacity = opacity,
+        opacity = style?.opacity ?: opacity.coerceAtLeast(0.4f),
         imageUri = style?.imageUri,
         videoUri = style?.videoUri,
+        color = style?.color ?: 0xFF1A1A1A,
+        saturation = style?.saturation ?: 0.15f,
+        brightness = style?.brightness ?: 0.4f,
         modifier = Modifier
             .fillMaxWidth()
-            .height(72.dp)
+            .height(76.dp)
             .clickable(onClick = onClick),
     ) {
         Text(
             text = "+",
-            color = Color.White.copy(alpha = 0.5f),
-            fontSize = 26.sp,
+            color = Color.White.copy(alpha = 0.75f),
+            fontSize = 28.sp,
+            fontWeight = FontWeight.Light,
             modifier = Modifier.padding(8.dp),
         )
     }

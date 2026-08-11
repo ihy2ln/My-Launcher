@@ -144,6 +144,7 @@ fun EditHomeScreen(
             useImage = settings.wallpaperMode == WallpaperMode.IMAGE,
             useVideo = settings.wallpaperMode == WallpaperMode.VIDEO,
             gradientFallback = palette.wallpaper,
+            useGradient = settings.wallpaperMode == WallpaperMode.GRADIENT,
         )
 
         Column(
@@ -201,6 +202,9 @@ fun EditHomeScreen(
                                 opacity = opacity,
                                 imageUri = style?.imageUri,
                                 videoUri = style?.videoUri,
+                                color = style?.color ?: 0xFF1A1A1A,
+                                saturation = style?.saturation ?: 0.2f,
+                                brightness = style?.brightness ?: 0.4f,
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(84.dp)
@@ -224,6 +228,9 @@ fun EditHomeScreen(
                                 opacity = opacity,
                                 imageUri = style?.imageUri,
                                 videoUri = style?.videoUri,
+                                color = style?.color ?: 0xFF1A1A1A,
+                                saturation = style?.saturation ?: 0.2f,
+                                brightness = style?.brightness ?: 0.4f,
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(84.dp),
@@ -245,6 +252,9 @@ fun EditHomeScreen(
                                 opacity = opacity,
                                 imageUri = style?.imageUri,
                                 videoUri = style?.videoUri,
+                                color = style?.color ?: 0xFF1A1A1A,
+                                saturation = style?.saturation ?: 0.2f,
+                                brightness = style?.brightness ?: 0.4f,
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(84.dp),
@@ -262,6 +272,9 @@ fun EditHomeScreen(
                                 opacity = opacity,
                                 imageUri = style?.imageUri,
                                 videoUri = style?.videoUri,
+                                color = style?.color ?: 0xFF1A1A1A,
+                                saturation = style?.saturation ?: 0.2f,
+                                brightness = style?.brightness ?: 0.4f,
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(84.dp)
@@ -383,7 +396,39 @@ fun EditHomeScreen(
             onDismissRequest = { moduleEditIndex = null },
             title = { Text("Module style") },
             text = {
-                Column {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Color, saturation & brightness", fontSize = 12.sp)
+                    ColorWheelPicker(
+                        color = style.color,
+                        onColorChange = { color ->
+                            scope.launch {
+                                repository.setModuleStyle(index, style.copy(color = color))
+                            }
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(220.dp),
+                    )
+                    Text("Saturation")
+                    Slider(
+                        value = style.saturation,
+                        onValueChange = { value ->
+                            scope.launch {
+                                repository.setModuleStyle(index, style.copy(saturation = value))
+                            }
+                        },
+                        valueRange = 0f..1f,
+                    )
+                    Text("Brightness")
+                    Slider(
+                        value = style.brightness,
+                        onValueChange = { value ->
+                            scope.launch {
+                                repository.setModuleStyle(index, style.copy(brightness = value))
+                            }
+                        },
+                        valueRange = 0.1f..1f,
+                    )
                     Text("Opacity")
                     Slider(
                         value = style.opacity,
@@ -392,7 +437,7 @@ fun EditHomeScreen(
                                 repository.setModuleStyle(index, style.copy(opacity = value))
                             }
                         },
-                        valueRange = 0.1f..0.9f,
+                        valueRange = 0.15f..0.95f,
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         TextButton(onClick = { pickModuleImage.launch(arrayOf("image/*")) }) { Text("Picture") }

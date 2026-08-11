@@ -8,12 +8,17 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -34,10 +39,13 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.homelauncher.app.data.LauncherRepository
 import com.homelauncher.app.model.DrawerGroup
 import com.homelauncher.app.model.FolderInfo
@@ -95,6 +103,7 @@ fun HomeLauncherApp() {
     var appMenuTarget by remember { mutableStateOf<AppInfo?>(null) }
     var removeTarget by remember { mutableStateOf<PlacementTarget?>(null) }
     var openFolder by remember { mutableStateOf<FolderInfo?>(null) }
+    var folderAddTarget by remember { mutableStateOf<FolderInfo?>(null) }
     var createFolderDraft by remember { mutableStateOf<Pair<Int, AppInfo>?>(null) }
     var folderTitle by remember { mutableStateOf("Folder") }
     var groupDialog by remember { mutableStateOf(false) }
@@ -184,15 +193,29 @@ fun HomeLauncherApp() {
                         groups = layout.drawerGroups,
                         settings = settings,
                         palette = palette,
-                        placementHint = placementTarget?.let { target ->
-                            when (target) {
-                                is PlacementTarget.Home -> "Tap an app to place on home screen"
-                                is PlacementTarget.Dock -> "Tap an app to place in dock"
+                        placementHint = when {
+                            folderAddTarget != null -> "Tap an app to add to ${folderAddTarget!!.title}"
+                            else -> placementTarget?.let { target ->
+                                when (target) {
+                                    is PlacementTarget.Home -> "Tap an app to place on home screen"
+                                    is PlacementTarget.Dock -> "Tap an app to place in dock"
+                                }
                             }
                         },
                         onLaunch = { app ->
+                            val folderTarget = folderAddTarget
                             val target = placementTarget
-                            if (target == null) {
+                            if (folderTarget != null) {
+                                scope.launch {
+                                    val updated = folderTarget.copy(
+                                        appKeys = (folderTarget.appKeys + app.key).distinct(),
+                                    )
+                                    repository.updateFolder(updated)
+                                    folderAddTarget = null
+                                    openFolder = updated
+                                    overlay = Overlay.None
+                                }
+                            } else if (target == null) {
                                 overlay = Overlay.None
                                 launchApp(context, app)
                             } else {
@@ -224,6 +247,7 @@ fun HomeLauncherApp() {
                         onLongPress = { appMenuTarget = it },
                         onDismissPlacement = {
                             placementTarget = null
+                            folderAddTarget = null
                             if (returnToEditAfterPick) {
                                 returnToEditAfterPick = false
                                 overlay = Overlay.EditHome
@@ -231,6 +255,7 @@ fun HomeLauncherApp() {
                         },
                         onClose = {
                             placementTarget = null
+                            folderAddTarget = null
                             overlay = if (returnToEditAfterPick) {
                                 returnToEditAfterPick = false
                                 Overlay.EditHome
@@ -428,8 +453,10 @@ fun HomeLauncherApp() {
         }
 
         openFolder?.let { folder ->
+            // Keep sheet in sync with latest folder data
+            val liveFolder = layout.folders[folder.id] ?: folder
             val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-            val folderApps = folder.appKeys.mapNotNull { findApp(apps, it) }
+            val folderApps = liveFolder.appKeys.mapNotNull { findApp(apps, it) }
             ModalBottomSheet(
                 onDismissRequest = { openFolder = null },
                 sheetState = sheetState,
@@ -437,12 +464,19 @@ fun HomeLauncherApp() {
                 containerColor = palette.drawerBackground,
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Text(folder.title, color = palette.textPrimary)
+                    Text(liveFolder.title, color = palette.textPrimary, fontSize = 20.sp)
+                    Text(
+                        "${folderApps.size} apps · tap to launch · long-press to remove",
+                        color = palette.textSecondary,
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(top = 4.dp, bottom = 12.dp),
+                    )
+
                     LazyVerticalGrid(
                         columns = GridCells.Fixed(4),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(top = 16.dp),
+                            .height(280.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalArrangement = Arrangement.spacedBy(16.dp),
                     ) {
@@ -455,15 +489,63 @@ fun HomeLauncherApp() {
                                     openFolder = null
                                     launchApp(context, app)
                                 },
+                                onLongClick = {
+                                    scope.launch {
+                                        val updated = liveFolder.copy(
+                                            appKeys = liveFolder.appKeys.filterNot { it == app.key },
+                                        )
+                                        repository.updateFolder(updated)
+                                        openFolder = updated
+                                    }
+                                },
                             )
                         }
-                    }
-                    TextButton(onClick = {
-                        scope.launch {
-                            repository.deleteFolder(folder.id)
-                            openFolder = null
+                        item {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        folderAddTarget = liveFolder
+                                        openFolder = null
+                                        overlay = Overlay.Drawer
+                                    },
+                                horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(settings.iconSizeDp.dp)
+                                        .clip(RoundedCornerShape(16.dp))
+                                        .background(palette.searchBackground),
+                                    contentAlignment = androidx.compose.ui.Alignment.Center,
+                                ) {
+                                    Text("+", color = palette.textPrimary, fontSize = 28.sp)
+                                }
+                                Text(
+                                    "Add",
+                                    color = palette.textPrimary,
+                                    fontSize = 12.sp,
+                                    modifier = Modifier.padding(top = 6.dp),
+                                )
+                            }
                         }
-                    }) { Text("Delete folder", color = palette.accent) }
+                    }
+
+                    Row(
+                        modifier = Modifier.padding(top = 12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        TextButton(onClick = {
+                            folderAddTarget = liveFolder
+                            openFolder = null
+                            overlay = Overlay.Drawer
+                        }) { Text("Add apps", color = palette.accent) }
+                        TextButton(onClick = {
+                            scope.launch {
+                                repository.deleteFolder(liveFolder.id)
+                                openFolder = null
+                            }
+                        }) { Text("Delete folder") }
+                    }
                 }
             }
         }
