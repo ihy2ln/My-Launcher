@@ -1,13 +1,16 @@
 package com.homelauncher.app.ui.home
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -15,6 +18,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -25,17 +29,25 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import com.homelauncher.app.AppInfo
 import com.homelauncher.app.findApp
 import com.homelauncher.app.model.FolderInfo
@@ -52,9 +64,17 @@ import com.homelauncher.app.ui.components.HomeWidgetView
 import com.homelauncher.app.ui.components.ModulePlate
 import com.homelauncher.app.ui.components.WallpaperBackdrop
 import com.homelauncher.app.ui.theme.LauncherPalette
+import com.homelauncher.app.ui.theme.iconShape
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.roundToInt
+
+data class HomeDragState(
+    val fromIndex: Int,
+    val app: AppInfo,
+    val position: Offset,
+)
 
 @Composable
 fun HomeScreen(
@@ -71,37 +91,17 @@ fun HomeScreen(
     onLongPressHome: (Int) -> Unit,
     onLongPressDock: (Int) -> Unit,
     onEditHome: () -> Unit,
+    onDropApp: (fromIndex: Int, toIndex: Int) -> Unit,
 ) {
     var cumulativeDragY by remember { mutableStateOf(0f) }
+    var dragState by remember { mutableStateOf<HomeDragState?>(null) }
+    var hoverIndex by remember { mutableStateOf<Int?>(null) }
+    val cellBounds = remember { mutableStateMapOf<Int, Rect>() }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .pointerInput(settings) {
-                detectTapGestures(
-                    onDoubleTap = { onGesture(settings.doubleTap) },
-                    onLongPress = { onEditHome() },
-                )
-            }
-            .pointerInput(settings) {
-                detectTransformGestures { _, _, zoom, _ ->
-                    if (zoom < 0.92f) onGesture(settings.pinchIn)
-                }
-            }
-            .pointerInput(settings) {
-                detectDragGestures(
-                    onDragEnd = {
-                        when {
-                            cumulativeDragY < -80f -> onGesture(settings.swipeUp)
-                            cumulativeDragY > 80f -> onGesture(settings.swipeDown)
-                        }
-                        cumulativeDragY = 0f
-                    },
-                    onDragCancel = { cumulativeDragY = 0f },
-                    onDrag = { _, dragAmount -> cumulativeDragY += dragAmount.y },
-                )
-            },
-    ) {
+    fun hitTest(point: Offset): Int? =
+        cellBounds.entries.firstOrNull { (_, rect) -> rect.contains(point) }?.key
+
+    Box(modifier = Modifier.fillMaxSize()) {
         WallpaperBackdrop(
             color = settings.wallpaperColor,
             imageUri = settings.wallpaperImageUri,
@@ -112,38 +112,124 @@ fun HomeScreen(
             useGradient = settings.wallpaperMode == WallpaperMode.GRADIENT,
         )
 
+        // Background gestures only (behind interactive content)
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .pointerInput(settings) {
+                    detectTapGestures(
+                        onDoubleTap = { onGesture(settings.doubleTap) },
+                        onLongPress = { onEditHome() },
+                    )
+                }
+                .pointerInput(settings) {
+                    detectTransformGestures { _, _, zoom, _ ->
+                        if (zoom < 0.92f) onGesture(settings.pinchIn)
+                    }
+                }
+                .pointerInput(settings) {
+                    detectVerticalDragGestures(
+                        onDragEnd = {
+                            when {
+                                cumulativeDragY < -80f -> onGesture(settings.swipeUp)
+                                cumulativeDragY > 80f -> onGesture(settings.swipeDown)
+                            }
+                            cumulativeDragY = 0f
+                        },
+                        onDragCancel = { cumulativeDragY = 0f },
+                        onVerticalDrag = { _, dragAmount -> cumulativeDragY += dragAmount },
+                    )
+                },
+        )
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .statusBarsPadding()
-                .padding(horizontal = 14.dp),
+                .padding(horizontal = 14.dp)
+                .zIndex(1f),
         ) {
-            ClockWidget(palette = palette, modifier = Modifier.padding(top = 18.dp, bottom = 14.dp))
+            ClockWidget(palette = palette, modifier = Modifier.padding(top = 18.dp, bottom = 8.dp))
 
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(settings.homeColumns),
-                modifier = Modifier.weight(1f),
-                contentPadding = PaddingValues(bottom = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                userScrollEnabled = false,
-            ) {
-                items(layout.homeSlots.size) { index ->
-                    HomeCell(
-                        slot = layout.homeSlots[index],
-                        style = layout.moduleStyles[index],
-                        defaultOpacity = settings.moduleOpacity,
-                        apps = apps,
-                        folders = layout.folders,
-                        settings = settings,
-                        palette = palette,
-                        showEmpty = true,
-                        onLaunch = onLaunch,
-                        onOpenFolder = onOpenFolder,
-                        onWidgetClick = onWidgetClick,
-                        onEmpty = { onEditHome() },
-                        onLongPress = { onLongPressHome(index) },
-                    )
+            if (dragState != null) {
+                Text(
+                    text = "Drop on a folder to add · empty cell to move · another app to swap",
+                    color = palette.accent,
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(bottom = 8.dp),
+                )
+            }
+
+            BoxWithConstraints(modifier = Modifier.weight(1f)) {
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(settings.homeColumns),
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(bottom = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    userScrollEnabled = false,
+                ) {
+                    items(layout.homeSlots.size) { index ->
+                        val isHoverTarget = hoverIndex == index && dragState != null && dragState?.fromIndex != index
+                        val slot = layout.homeSlots[index]
+                        Box(
+                            modifier = Modifier
+                                .onGloballyPositioned { coords ->
+                                    cellBounds[index] = coords.boundsInRoot()
+                                }
+                                .then(
+                                    if (isHoverTarget) {
+                                        Modifier.border(2.dp, palette.accent, RoundedCornerShape(16.dp))
+                                    } else {
+                                        Modifier
+                                    },
+                                ),
+                        ) {
+                            if (dragState?.fromIndex == index) {
+                                Box(modifier = Modifier.height(76.dp).fillMaxWidth())
+                            } else {
+                                HomeCell(
+                                    slot = slot,
+                                    style = layout.moduleStyles[index],
+                                    defaultOpacity = settings.moduleOpacity,
+                                    apps = apps,
+                                    folders = layout.folders,
+                                    settings = settings,
+                                    palette = palette,
+                                    showEmpty = true,
+                                    highlighted = isHoverTarget && slot is HomeSlot.Folder,
+                                    onLaunch = onLaunch,
+                                    onOpenFolder = onOpenFolder,
+                                    onWidgetClick = onWidgetClick,
+                                    onEmpty = { onEditHome() },
+                                    onLongPress = { onLongPressHome(index) },
+                                    onDragStart = { pos ->
+                                        val appKey = (slot as? HomeSlot.App)?.key ?: return@HomeCell
+                                        val app = findApp(apps, appKey) ?: return@HomeCell
+                                        dragState = HomeDragState(index, app, pos)
+                                        hoverIndex = index
+                                    },
+                                    onDrag = { pos ->
+                                        dragState = dragState?.copy(position = pos)
+                                        hoverIndex = hitTest(pos)
+                                    },
+                                    onDragEnd = {
+                                        val target = hoverIndex
+                                        val from = dragState?.fromIndex
+                                        if (from != null && target != null && target != from) {
+                                            onDropApp(from, target)
+                                        }
+                                        dragState = null
+                                        hoverIndex = null
+                                    },
+                                    onDragCancel = {
+                                        dragState = null
+                                        hoverIndex = null
+                                    },
+                                )
+                            }
+                        }
+                    }
                 }
             }
 
@@ -159,6 +245,24 @@ fun HomeScreen(
 
             DrawerHint(palette)
         }
+
+        dragState?.let { drag ->
+            Image(
+                bitmap = drag.app.icon,
+                contentDescription = drag.app.label,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .offset {
+                        IntOffset(
+                            (drag.position.x - 36).roundToInt(),
+                            (drag.position.y - 36).roundToInt(),
+                        )
+                    }
+                    .size(72.dp)
+                    .clip(iconShape(settings.iconShape))
+                    .zIndex(20f),
+            )
+        }
     }
 }
 
@@ -172,11 +276,16 @@ fun HomeCell(
     settings: LauncherSettings,
     palette: LauncherPalette,
     showEmpty: Boolean,
+    highlighted: Boolean = false,
     onLaunch: (AppInfo) -> Unit,
     onOpenFolder: (FolderInfo) -> Unit,
     onWidgetClick: (WidgetType) -> Unit,
     onEmpty: () -> Unit,
     onLongPress: () -> Unit,
+    onDragStart: ((Offset) -> Unit)? = null,
+    onDrag: ((Offset) -> Unit)? = null,
+    onDragEnd: (() -> Unit)? = null,
+    onDragCancel: (() -> Unit)? = null,
 ) {
     val opacity = style?.opacity ?: defaultOpacity
     when (slot) {
@@ -189,6 +298,10 @@ fun HomeCell(
                     palette = palette,
                     onClick = { onLaunch(app) },
                     onLongClick = onLongPress,
+                    onDragStart = onDragStart,
+                    onDrag = onDrag,
+                    onDragEnd = onDragEnd,
+                    onDragCancel = onDragCancel,
                 )
             } else if (showEmpty) {
                 EmptyModule(opacity, style, onEmpty)
@@ -197,14 +310,24 @@ fun HomeCell(
         is HomeSlot.Folder -> {
             val folder = folders[slot.folderId]
             if (folder != null) {
-                FolderIconView(
-                    folder = folder,
-                    previewApps = folder.appKeys.mapNotNull { findApp(apps, it) },
-                    settings = settings,
-                    palette = palette,
-                    onClick = { onOpenFolder(folder) },
-                    onLongClick = onLongPress,
-                )
+                Box(
+                    modifier = if (highlighted) {
+                        Modifier
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(palette.accent.copy(alpha = 0.25f))
+                    } else {
+                        Modifier
+                    },
+                ) {
+                    FolderIconView(
+                        folder = folder,
+                        previewApps = folder.appKeys.mapNotNull { findApp(apps, it) },
+                        settings = settings,
+                        palette = palette,
+                        onClick = { onOpenFolder(folder) },
+                        onLongClick = onLongPress,
+                    )
+                }
             } else if (showEmpty) {
                 EmptyModule(opacity, style, onEmpty)
             }
@@ -342,6 +465,10 @@ fun DrawerHint(palette: LauncherPalette) {
                 .background(Color.White.copy(alpha = 0.45f)),
         )
         Spacer(modifier = Modifier.height(6.dp))
-        Text("Swipe up for apps · long-press to edit", color = palette.textSecondary, fontSize = 11.sp)
+        Text(
+            "Tap folder to open · hold app to move / drag into folder",
+            color = palette.textSecondary,
+            fontSize = 11.sp,
+        )
     }
 }

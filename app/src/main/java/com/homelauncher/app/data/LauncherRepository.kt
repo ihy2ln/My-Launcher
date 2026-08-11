@@ -105,6 +105,56 @@ class LauncherRepository(private val context: Context) {
         }
     }
 
+    suspend fun moveAppIntoFolder(fromHomeIndex: Int, folderId: String) {
+        mutateLayout { layout ->
+            val slot = layout.homeSlots.getOrNull(fromHomeIndex) as? HomeSlot.App ?: return@mutateLayout layout
+            val folder = layout.folders[folderId] ?: return@mutateLayout layout
+            val home = layout.homeSlots.toMutableList()
+            home[fromHomeIndex] = null
+            val updated = folder.copy(appKeys = (folder.appKeys + slot.key).distinct())
+            layout.copy(
+                homeSlots = home,
+                folders = layout.folders + (folderId to updated),
+            )
+        }
+    }
+
+    suspend fun moveHomeSlot(fromIndex: Int, toIndex: Int) {
+        if (fromIndex == toIndex) return
+        mutateLayout { layout ->
+            val home = layout.homeSlots.toMutableList()
+            if (fromIndex !in home.indices || toIndex !in home.indices) return@mutateLayout layout
+            val moving = home[fromIndex] ?: return@mutateLayout layout
+            val target = home[toIndex]
+            when {
+                target == null -> {
+                    home[toIndex] = moving
+                    home[fromIndex] = null
+                }
+                target is HomeSlot.Folder && moving is HomeSlot.App -> {
+                    val folder = layout.folders[target.folderId] ?: return@mutateLayout layout
+                    home[fromIndex] = null
+                    val updated = folder.copy(appKeys = (folder.appKeys + moving.key).distinct())
+                    return@mutateLayout layout.copy(
+                        homeSlots = home,
+                        folders = layout.folders + (folder.id to updated),
+                    )
+                }
+                target is HomeSlot.App && moving is HomeSlot.App -> {
+                    // swap
+                    home[fromIndex] = target
+                    home[toIndex] = moving
+                }
+                else -> {
+                    // swap generic
+                    home[fromIndex] = target
+                    home[toIndex] = moving
+                }
+            }
+            layout.copy(homeSlots = home)
+        }
+    }
+
     suspend fun hideApp(key: String) = mutateLayout { it.copy(hiddenApps = it.hiddenApps + key) }
     suspend fun unhideApp(key: String) = mutateLayout { it.copy(hiddenApps = it.hiddenApps - key) }
     suspend fun saveDrawerGroups(groups: List<DrawerGroup>) = mutateLayout { it.copy(drawerGroups = groups) }

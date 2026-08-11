@@ -102,6 +102,8 @@ fun HomeLauncherApp() {
     var placementTarget by remember { mutableStateOf<PlacementTarget?>(null) }
     var appMenuTarget by remember { mutableStateOf<AppInfo?>(null) }
     var removeTarget by remember { mutableStateOf<PlacementTarget?>(null) }
+    var appActionTarget by remember { mutableStateOf<Pair<Int, AppInfo>?>(null) }
+    var moveToFolderApp by remember { mutableStateOf<Pair<Int, AppInfo>?>(null) }
     var openFolder by remember { mutableStateOf<FolderInfo?>(null) }
     var folderAddTarget by remember { mutableStateOf<FolderInfo?>(null) }
     var createFolderDraft by remember { mutableStateOf<Pair<Int, AppInfo>?>(null) }
@@ -157,9 +159,21 @@ fun HomeLauncherApp() {
                         placementTarget = PlacementTarget.Dock(index)
                         overlay = Overlay.Drawer
                     },
-                    onLongPressHome = { removeTarget = PlacementTarget.Home(it) },
+                    onLongPressHome = { index ->
+                        when (val slot = layout.homeSlots.getOrNull(index)) {
+                            is HomeSlot.App -> {
+                                val app = findApp(apps, slot.key)
+                                if (app != null) appActionTarget = index to app
+                                else removeTarget = PlacementTarget.Home(index)
+                            }
+                            else -> removeTarget = PlacementTarget.Home(index)
+                        }
+                    },
                     onLongPressDock = { removeTarget = PlacementTarget.Dock(it) },
                     onEditHome = { overlay = Overlay.EditHome },
+                    onDropApp = { from, to ->
+                        scope.launch { repository.moveHomeSlot(from, to) }
+                    },
                 )
 
                 if (overlay == Overlay.EditHome) {
@@ -404,6 +418,76 @@ fun HomeLauncherApp() {
                             createFolderDraft = null
                         }
                     }) { Text("Replace") }
+                },
+            )
+        }
+
+        appActionTarget?.let { (index, app) ->
+            val folders = layout.folders.values.toList()
+            AlertDialog(
+                onDismissRequest = { appActionTarget = null },
+                title = { Text(app.label) },
+                text = { Text("Move this app, add it to a folder, or remove it from the home screen.") },
+                confirmButton = {
+                    Column {
+                        TextButton(onClick = {
+                            appActionTarget = null
+                            launchApp(context, app)
+                        }) { Text("Open") }
+                        TextButton(onClick = {
+                            appActionTarget = null
+                            if (folders.isEmpty()) {
+                                // Create a new folder with just this app at its slot
+                                scope.launch {
+                                    repository.createFolder(app.label, listOf(app.key), index)
+                                }
+                            } else {
+                                moveToFolderApp = index to app
+                            }
+                        }) { Text(if (folders.isEmpty()) "Create folder" else "Move to folder…") }
+                        TextButton(onClick = {
+                            appActionTarget = null
+                            removeTarget = PlacementTarget.Home(index)
+                        }) { Text("Remove from home") }
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { appActionTarget = null }) { Text("Cancel") }
+                },
+            )
+        }
+
+        moveToFolderApp?.let { (index, app) ->
+            val folders = layout.folders.values.toList()
+            AlertDialog(
+                onDismissRequest = { moveToFolderApp = null },
+                title = { Text("Move ${app.label}") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("Choose a folder, or create a new one.")
+                        folders.forEach { folder ->
+                            TextButton(onClick = {
+                                scope.launch {
+                                    repository.moveAppIntoFolder(index, folder.id)
+                                    moveToFolderApp = null
+                                    openFolder = layout.folders[folder.id]?.copy(
+                                        appKeys = (folder.appKeys + app.key).distinct(),
+                                    ) ?: folder.copy(appKeys = folder.appKeys + app.key)
+                                }
+                            }) { Text(folder.title) }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        scope.launch {
+                            repository.createFolder("Folder", listOf(app.key), index)
+                            moveToFolderApp = null
+                        }
+                    }) { Text("New folder here") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { moveToFolderApp = null }) { Text("Cancel") }
                 },
             )
         }
