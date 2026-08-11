@@ -2,23 +2,22 @@
 
 A Nova-inspired Android home screen launcher built with Kotlin and Jetpack Compose.
 
-## Features (Nova-style)
+## Features
 
-- **Desktop** — clock, configurable grid (3–6 columns / 4–7 rows), dock, folders
-- **App drawer** — swipe-up, search, vertical/horizontal scroll, custom groups/tabs
-- **Search micro-results** — calculator and unit conversions (e.g. `12*7`, `10 km to mi`)
-- **Icon theming** — circle / squircle / square / teardrop shapes, size & label controls
-- **Themes** — light / dark / system, accent colors, Material You toggle, wallpaper styles
-- **Gestures (Prime)** — swipe up/down, double-tap, pinch-in → drawer, search, settings, notifications
-- **Hide apps** — hide from drawer without uninstalling
-- **Folders** — stack apps on the home screen to create folders
-- **Backup & restore** — export/import full layout + settings as JSON
+- **Edit Home Screen** — long-press the desktop to enter edit mode (matches the module grid with `+` slots)
+- **Background** — color wheel, picture, or looping video wallpaper
+- **Modules** — per-module opacity plus optional picture/video backgrounds
+- **Add content** — apps, groups/folders, and widgets (clock, weather, app drawer)
+- **Desktop + dock** — configurable grid (default 5×6), dock icons, live clock
+- **App drawer** — swipe-up search, groups, hide apps
+- **Themes & gestures** — light/dark, accents, swipe/double-tap/pinch actions
+- **Backup & restore** — export/import JSON setups
 
 ## Install
 
 Download the latest APK from the [Releases](https://github.com/ihy2ln/My-Launcher/releases) page.
 
-1. Install **HomeLauncher-v0.3.0.apk**
+1. Install **HomeLauncher-v0.4.0.apk**
 2. Press **Home** → choose **Home Launcher** → **Always**
 
 ### Build from source
@@ -27,20 +26,16 @@ Download the latest APK from the [Releases](https://github.com/ihy2ln/My-Launche
 ./gradlew assembleRelease
 ```
 
-APK: `app/build/outputs/apk/release/app-release.apk`
-
-## Usage
+## Edit mode
 
 | Action | Result |
 | --- | --- |
-| Swipe up | App drawer (configurable) |
-| Swipe down | Search / notifications (configurable) |
-| Double-tap / pinch | Configurable gesture |
-| Long-press home | Open Nova Settings |
-| Tap empty slot | Place app |
-| Place app on another app | Create folder |
-| Long-press drawer app | Add / hide / group |
-| Settings → Backup | Save or restore your setup |
+| Long-press home | Enter Edit Home Screen |
+| Tap **Background** | Color wheel / picture / video |
+| Module opacity slider | Adjust empty module transparency |
+| Tap `+` | Add app, widget, or group |
+| Module style | Per-cell opacity, picture, or video |
+| **Done** | Leave edit mode |
 
 ## Requirements
 
