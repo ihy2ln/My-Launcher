@@ -37,6 +37,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -62,6 +63,7 @@ import com.homelauncher.app.data.LauncherRepository
 import com.homelauncher.app.model.DrawerScroll
 import com.homelauncher.app.model.GestureAction
 import com.homelauncher.app.model.IconShape
+import com.homelauncher.app.model.DrawerGroup
 import com.homelauncher.app.model.LauncherSettings
 import com.homelauncher.app.model.ScrollEffect
 import com.homelauncher.app.model.SearchBarPosition
@@ -92,6 +94,9 @@ fun SettingsScreen(
     var section by remember { mutableStateOf<SettingsSection?>(null) }
     var query by remember { mutableStateOf("") }
     var showScrollEffect by remember { mutableStateOf(false) }
+    val layout by repository.layout.collectAsState(initial = com.homelauncher.app.model.defaultLayout(30, 6))
+    var renameGroupId by remember { mutableStateOf<String?>(null) }
+    var renameGroupDraft by remember { mutableStateOf("") }
 
     val takePersistable = { uri: Uri ->
         runCatching {
@@ -240,6 +245,17 @@ fun SettingsScreen(
                                 palette = palette,
                                 onSelect = { index -> update { it.copy(drawerScroll = DrawerScroll.entries[index]) } },
                             )
+                            Text("Drawer groups", color = palette.textPrimary, fontSize = 15.sp, modifier = Modifier.padding(top = 8.dp))
+                            if (layout.drawerGroups.isEmpty()) {
+                                Text("No groups yet. Long-press an app and choose Add to group.", color = palette.textSecondary, fontSize = 13.sp)
+                            } else {
+                                layout.drawerGroups.forEach { group ->
+                                    ActionRow(group.title, "${group.appKeys.size} apps · tap to rename", palette) {
+                                        renameGroupId = group.id
+                                        renameGroupDraft = group.title
+                                    }
+                                }
+                            }
                         }
                         SettingsSection.FOLDERS -> {
                             Text(
@@ -281,11 +297,13 @@ fun SettingsScreen(
                             SettingSwitch("Material You colors", settings.useMaterialYou, palette) {
                                 update { s -> s.copy(useMaterialYou = it) }
                             }
-                            Text("Accent color", color = palette.textPrimary, fontSize = 14.sp)
-                            AccentPicker(selected = settings.accentColor) { color ->
-                                update { it.copy(accentColor = color) }
-                            }
-                            Text("Background color", color = palette.textPrimary, fontSize = 14.sp)
+                            Text("Accent color", color = palette.textPrimary, fontSize = 14.sp, modifier = Modifier.padding(top = 4.dp))
+                            ColorWheelPicker(
+                                color = settings.accentColor,
+                                onColorChange = { color -> update { it.copy(accentColor = color) } },
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            Text("Background color", color = palette.textPrimary, fontSize = 14.sp, modifier = Modifier.padding(top = 8.dp))
                             ColorWheelPicker(
                                 color = settings.wallpaperColor,
                                 onColorChange = { color ->
@@ -296,9 +314,7 @@ fun SettingsScreen(
                                         )
                                     }
                                 },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(260.dp),
+                                modifier = Modifier.fillMaxWidth(),
                             )
                             Text("Background media", color = palette.textPrimary, fontSize = 14.sp)
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -386,15 +402,19 @@ fun SettingsScreen(
                         palette = palette,
                         onSelect = { index -> update { it.copy(themeMode = ThemeMode.entries[index]) } },
                     )
-                    AccentPicker(selected = settings.accentColor) { color ->
-                        update { it.copy(accentColor = color) }
-                    }
+                    Text("Accent", color = palette.textSecondary, fontSize = 13.sp)
+                    ColorWheelPicker(
+                        color = settings.accentColor,
+                        onColorChange = { color -> update { it.copy(accentColor = color) } },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Text("Background", color = palette.textSecondary, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp))
                     ColorWheelPicker(
                         color = settings.wallpaperColor,
                         onColorChange = { color ->
                             update { it.copy(wallpaperMode = WallpaperMode.COLOR, wallpaperColor = color) }
                         },
-                        modifier = Modifier.fillMaxWidth().height(240.dp),
+                        modifier = Modifier.fillMaxWidth(),
                     )
                     ChoiceRow(
                         title = "Icon shape",
@@ -456,6 +476,37 @@ fun SettingsScreen(
                 section = null
             },
         )
+    }
+
+    renameGroupId?.let { id ->
+        val group = layout.drawerGroups.firstOrNull { it.id == id }
+        if (group != null) {
+            AlertDialog(
+                onDismissRequest = { renameGroupId = null },
+                title = { Text("Rename group") },
+                text = {
+                    androidx.compose.material3.TextField(
+                        value = renameGroupDraft,
+                        onValueChange = { renameGroupDraft = it },
+                        label = { Text("Group name") },
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        scope.launch {
+                            val groups = layout.drawerGroups.map {
+                                if (it.id == id) it.copy(title = renameGroupDraft.ifBlank { it.title }) else it
+                            }
+                            repository.saveDrawerGroups(groups)
+                            renameGroupId = null
+                        }
+                    }) { Text("Save") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { renameGroupId = null }) { Text("Cancel") }
+                },
+            )
+        }
     }
 
     if (showScrollEffect) {
@@ -831,27 +882,6 @@ private fun ChoiceRow(
     }
 }
 
-@Composable
-private fun AccentPicker(selected: Long, onSelect: (Long) -> Unit) {
-    val colors = listOf(
-        0xFF82B1FF, 0xFF80CBC4, 0xFFFFAB91, 0xFFCE93D8,
-        0xFFFFF59D, 0xFF90CAF9, 0xFFA5D6A7, 0xFFEF9A9A,
-    )
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        modifier = Modifier.horizontalScroll(rememberScrollState()),
-    ) {
-        colors.forEach { color ->
-            Box(
-                modifier = Modifier
-                    .size(if (color == selected) 40.dp else 36.dp)
-                    .clip(CircleShape)
-                    .background(Color(color))
-                    .clickable { onSelect(color) },
-            )
-        }
-    }
-}
 
 @Composable
 private fun WallpaperPicker(selected: Int, onSelect: (Int) -> Unit) {

@@ -10,8 +10,7 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
-import com.homelauncher.app.model.DrawerGroup
-import com.homelauncher.app.model.DrawerScroll
+import com.homelauncher.app.model.FloatingWidget
 import com.homelauncher.app.model.FolderInfo
 import com.homelauncher.app.model.GestureAction
 import com.homelauncher.app.model.HomeSlot
@@ -24,6 +23,8 @@ import com.homelauncher.app.model.ScrollEffect
 import com.homelauncher.app.model.ThemeMode
 import com.homelauncher.app.model.WallpaperMode
 import com.homelauncher.app.model.WidgetType
+import com.homelauncher.app.model.DrawerGroup
+import com.homelauncher.app.model.DrawerScroll
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import org.json.JSONArray
@@ -37,13 +38,20 @@ class LauncherRepository(private val context: Context) {
 
     val layout: Flow<LauncherLayout> = context.launcherDataStore.data.map { prefs ->
         val s = prefs.toSettings()
+        val decoded = decodeSlots(prefs[Keys.HOME_SLOTS], s.homeColumns * s.homeRows)
+        val migrated = migrateGridWidgets(
+            homeSlots = decoded,
+            existing = decodeFloatingWidgets(prefs[Keys.FLOATING_WIDGETS]),
+        )
         LauncherLayout(
-            homeSlots = decodeSlots(prefs[Keys.HOME_SLOTS], s.homeColumns * s.homeRows),
+            homeSlots = migrated.homeSlots,
             dockSlots = decodeSlots(prefs[Keys.DOCK_SLOTS_DATA], s.dockSlots),
             folders = decodeFolders(prefs[Keys.FOLDERS]),
             hiddenApps = decodeSet(prefs[Keys.HIDDEN]),
             drawerGroups = decodeGroups(prefs[Keys.GROUPS]),
             moduleStyles = decodeModuleStyles(prefs[Keys.MODULE_STYLES]),
+            floatingWidgets = migrated.widgets,
+            appAliases = decodeAliases(prefs[Keys.APP_ALIASES]),
         )
     }
 
@@ -160,6 +168,30 @@ class LauncherRepository(private val context: Context) {
     suspend fun unhideApp(key: String) = mutateLayout { it.copy(hiddenApps = it.hiddenApps - key) }
     suspend fun saveDrawerGroups(groups: List<DrawerGroup>) = mutateLayout { it.copy(drawerGroups = groups) }
 
+    suspend fun setAppAlias(key: String, alias: String?) = mutateLayout { layout ->
+        val aliases = layout.appAliases.toMutableMap()
+        if (alias.isNullOrBlank()) aliases.remove(key) else aliases[key] = alias.trim()
+        layout.copy(appAliases = aliases)
+    }
+
+    suspend fun addFloatingWidget(type: WidgetType): String {
+        var createdId = ""
+        mutateLayout { layout ->
+            val widget = FloatingWidget.defaultsFor(type, layout.floatingWidgets.size)
+            createdId = widget.id
+            layout.copy(floatingWidgets = layout.floatingWidgets + widget)
+        }
+        return createdId
+    }
+
+    suspend fun updateFloatingWidget(widget: FloatingWidget) = mutateLayout { layout ->
+        layout.copy(floatingWidgets = layout.floatingWidgets.map { if (it.id == widget.id) widget else it })
+    }
+
+    suspend fun removeFloatingWidget(id: String) = mutateLayout { layout ->
+        layout.copy(floatingWidgets = layout.floatingWidgets.filterNot { it.id == id })
+    }
+
     suspend fun exportBackup(): String = buildBackupJson()
 
     private suspend fun buildBackupJson(): String {
@@ -203,6 +235,8 @@ class LauncherRepository(private val context: Context) {
                 put("hidden", prefs[Keys.HIDDEN] ?: "")
                 put("groups", prefs[Keys.GROUPS] ?: "[]")
                 put("moduleStyles", prefs[Keys.MODULE_STYLES] ?: "{}")
+                put("floatingWidgets", prefs[Keys.FLOATING_WIDGETS] ?: "[]")
+                put("appAliases", prefs[Keys.APP_ALIASES] ?: "{}")
             }
         }
         return JSONObject().apply {
@@ -255,19 +289,28 @@ class LauncherRepository(private val context: Context) {
             prefs[Keys.HIDDEN] = layoutObj.optString("hidden", "")
             prefs[Keys.GROUPS] = layoutObj.optString("groups", "[]")
             prefs[Keys.MODULE_STYLES] = layoutObj.optString("moduleStyles", "{}")
+            prefs[Keys.FLOATING_WIDGETS] = layoutObj.optString("floatingWidgets", "[]")
+            prefs[Keys.APP_ALIASES] = layoutObj.optString("appAliases", "{}")
         }
     }
 
     private suspend fun mutateLayout(transform: (LauncherLayout) -> LauncherLayout) {
         context.launcherDataStore.edit { prefs ->
             val s = prefs.toSettings()
+            val decoded = decodeSlots(prefs[Keys.HOME_SLOTS], s.homeColumns * s.homeRows)
+            val migrated = migrateGridWidgets(
+                homeSlots = decoded,
+                existing = decodeFloatingWidgets(prefs[Keys.FLOATING_WIDGETS]),
+            )
             val current = LauncherLayout(
-                homeSlots = decodeSlots(prefs[Keys.HOME_SLOTS], s.homeColumns * s.homeRows),
+                homeSlots = migrated.homeSlots,
                 dockSlots = decodeSlots(prefs[Keys.DOCK_SLOTS_DATA], s.dockSlots),
                 folders = decodeFolders(prefs[Keys.FOLDERS]),
                 hiddenApps = decodeSet(prefs[Keys.HIDDEN]),
                 drawerGroups = decodeGroups(prefs[Keys.GROUPS]),
                 moduleStyles = decodeModuleStyles(prefs[Keys.MODULE_STYLES]),
+                floatingWidgets = migrated.widgets,
+                appAliases = decodeAliases(prefs[Keys.APP_ALIASES]),
             )
             val next = transform(current)
             prefs[Keys.HOME_SLOTS] = encodeSlots(next.homeSlots)
@@ -276,6 +319,8 @@ class LauncherRepository(private val context: Context) {
             prefs[Keys.HIDDEN] = encodeSet(next.hiddenApps)
             prefs[Keys.GROUPS] = encodeGroups(next.drawerGroups)
             prefs[Keys.MODULE_STYLES] = encodeModuleStyles(next.moduleStyles)
+            prefs[Keys.FLOATING_WIDGETS] = encodeFloatingWidgets(next.floatingWidgets)
+            prefs[Keys.APP_ALIASES] = encodeAliases(next.appAliases)
         }
     }
 
@@ -313,6 +358,8 @@ class LauncherRepository(private val context: Context) {
         val HIDDEN = stringPreferencesKey("hidden")
         val GROUPS = stringPreferencesKey("groups")
         val MODULE_STYLES = stringPreferencesKey("module_styles")
+        val FLOATING_WIDGETS = stringPreferencesKey("floating_widgets")
+        val APP_ALIASES = stringPreferencesKey("app_aliases")
     }
 
     companion object {
@@ -475,6 +522,7 @@ class LauncherRepository(private val context: Context) {
                         put("brightness", style.brightness.toDouble())
                         put("imageUri", style.imageUri ?: "")
                         put("videoUri", style.videoUri ?: "")
+                        put("title", style.title ?: "")
                     },
                 )
             }
@@ -497,6 +545,7 @@ class LauncherRepository(private val context: Context) {
                                 brightness = item.optDouble("brightness", 0.35).toFloat(),
                                 imageUri = item.optString("imageUri").ifBlank { null },
                                 videoUri = item.optString("videoUri").ifBlank { null },
+                                title = item.optString("title").ifBlank { null },
                             ),
                         )
                     }
@@ -504,6 +553,89 @@ class LauncherRepository(private val context: Context) {
             } catch (_: Exception) {
                 emptyMap()
             }
+        }
+
+        private fun encodeFloatingWidgets(widgets: List<FloatingWidget>): String {
+            val array = JSONArray()
+            widgets.forEach { w ->
+                array.put(JSONObject().apply {
+                    put("id", w.id)
+                    put("type", w.type.name)
+                    put("title", w.title)
+                    put("xFrac", w.xFrac.toDouble())
+                    put("yFrac", w.yFrac.toDouble())
+                    put("widthFrac", w.widthFrac.toDouble())
+                    put("heightFrac", w.heightFrac.toDouble())
+                })
+            }
+            return array.toString()
+        }
+
+        private fun decodeFloatingWidgets(raw: String?): List<FloatingWidget> {
+            if (raw.isNullOrBlank()) return emptyList()
+            return try {
+                val array = JSONArray(raw)
+                List(array.length()) { i ->
+                    val obj = array.getJSONObject(i)
+                    val type = runCatching { WidgetType.valueOf(obj.getString("type")) }.getOrDefault(WidgetType.CLOCK)
+                    FloatingWidget(
+                        id = obj.getString("id"),
+                        type = type,
+                        title = obj.optString("title"),
+                        xFrac = obj.optDouble("xFrac", 0.08).toFloat(),
+                        yFrac = obj.optDouble("yFrac", 0.22).toFloat(),
+                        widthFrac = obj.optDouble("widthFrac", 0.42).toFloat(),
+                        heightFrac = obj.optDouble("heightFrac", 0.16).toFloat(),
+                    )
+                }
+            } catch (_: Exception) {
+                emptyList()
+            }
+        }
+
+        private fun encodeAliases(aliases: Map<String, String>): String {
+            val obj = JSONObject()
+            aliases.forEach { (k, v) -> obj.put(k, v) }
+            return obj.toString()
+        }
+
+        private fun decodeAliases(raw: String?): Map<String, String> {
+            if (raw.isNullOrBlank()) return emptyMap()
+            return try {
+                val obj = JSONObject(raw)
+                buildMap {
+                    obj.keys().forEach { key -> put(key, obj.getString(key)) }
+                }
+            } catch (_: Exception) {
+                emptyMap()
+            }
+        }
+
+        private data class MigratedWidgets(
+            val homeSlots: List<HomeSlot?>,
+            val widgets: List<FloatingWidget>,
+        )
+
+        private fun migrateGridWidgets(
+            homeSlots: List<HomeSlot?>,
+            existing: List<FloatingWidget>,
+        ): MigratedWidgets {
+            val extras = mutableListOf<FloatingWidget>()
+            val cleaned = homeSlots.mapIndexed { index, slot ->
+                if (slot is HomeSlot.Widget) {
+                    val already = existing.any { it.id == slot.id } || extras.any { it.id == slot.id }
+                    if (!already) {
+                        extras += FloatingWidget.defaultsFor(slot.type, index).copy(
+                            id = slot.id,
+                            title = slot.type.name.lowercase().replaceFirstChar { it.titlecase() },
+                        )
+                    }
+                    null
+                } else {
+                    slot
+                }
+            }
+            return MigratedWidgets(cleaned, existing + extras)
         }
 
         private fun encodeSet(set: Set<String>): String = set.joinToString("|")

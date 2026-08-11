@@ -92,6 +92,10 @@ fun HomeScreen(
     onLongPressDock: (Int) -> Unit,
     onEditHome: () -> Unit,
     onDropApp: (fromIndex: Int, toIndex: Int) -> Unit,
+    onFloatingWidgetClick: (com.homelauncher.app.model.FloatingWidget) -> Unit = {},
+    onFloatingWidgetLongPress: (com.homelauncher.app.model.FloatingWidget) -> Unit = {},
+    onFloatingWidgetMove: (com.homelauncher.app.model.FloatingWidget, Float, Float) -> Unit = { _, _, _ -> },
+    onFloatingWidgetResize: (com.homelauncher.app.model.FloatingWidget, Float, Float) -> Unit = { _, _, _ -> },
 ) {
     var cumulativeDragY by remember { mutableStateOf(0f) }
     var dragState by remember { mutableStateOf<HomeDragState?>(null) }
@@ -198,6 +202,7 @@ fun HomeScreen(
                                     palette = palette,
                                     showEmpty = true,
                                     highlighted = isHoverTarget && slot is HomeSlot.Folder,
+                                    appAliases = layout.appAliases,
                                     onLaunch = onLaunch,
                                     onOpenFolder = onOpenFolder,
                                     onWidgetClick = onWidgetClick,
@@ -231,6 +236,16 @@ fun HomeScreen(
                         }
                     }
                 }
+
+                FloatingWidgetsLayer(
+                    widgets = layout.floatingWidgets,
+                    palette = palette,
+                    editable = false,
+                    onClick = onFloatingWidgetClick,
+                    onLongPress = onFloatingWidgetLongPress,
+                    onMove = onFloatingWidgetMove,
+                    onResize = onFloatingWidgetResize,
+                )
             }
 
             DockBar(
@@ -277,6 +292,7 @@ fun HomeCell(
     palette: LauncherPalette,
     showEmpty: Boolean,
     highlighted: Boolean = false,
+    appAliases: Map<String, String> = emptyMap(),
     onLaunch: (AppInfo) -> Unit,
     onOpenFolder: (FolderInfo) -> Unit,
     onWidgetClick: (WidgetType) -> Unit,
@@ -302,6 +318,7 @@ fun HomeCell(
                     onDrag = onDrag,
                     onDragEnd = onDragEnd,
                     onDragCancel = onDragCancel,
+                    labelOverride = appAliases[app.key],
                 )
             } else if (showEmpty) {
                 EmptyModule(opacity, style, onEmpty)
@@ -333,12 +350,8 @@ fun HomeCell(
             }
         }
         is HomeSlot.Widget -> {
-            HomeWidgetView(
-                type = slot.type,
-                palette = palette,
-                size = settings.iconSizeDp.dp,
-                onClick = { onWidgetClick(slot.type) },
-            )
+            // Legacy grid widgets are migrated to floating widgets; keep cell empty.
+            if (showEmpty) EmptyModule(opacity, style, onEmpty)
         }
         null -> if (showEmpty) EmptyModule(opacity, style, onEmpty) else Box(modifier = Modifier.size(settings.iconSizeDp.dp))
     }

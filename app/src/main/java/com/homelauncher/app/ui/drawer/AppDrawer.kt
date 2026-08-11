@@ -71,6 +71,11 @@ fun AppDrawer(
     onLongPress: (AppInfo) -> Unit,
     onDismissPlacement: () -> Unit,
     onClose: () -> Unit,
+    selectionMode: Boolean = false,
+    selectedKeys: Set<String> = emptySet(),
+    appAliases: Map<String, String> = emptyMap(),
+    onToggleSelect: (AppInfo) -> Unit = {},
+    onConfirmSelection: () -> Unit = {},
 ) {
     var query by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
@@ -102,7 +107,7 @@ fun AppDrawer(
                 .fillMaxSize()
                 .statusBarsPadding(),
         ) {
-            if (placementHint != null) {
+            if (placementHint != null || selectionMode) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -110,7 +115,15 @@ fun AppDrawer(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(placementHint, color = palette.accent, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                    Text(
+                        text = when {
+                            selectionMode -> "Select apps · ${selectedKeys.size} selected"
+                            else -> placementHint.orEmpty()
+                        },
+                        color = palette.accent,
+                        fontSize = 13.sp,
+                        modifier = Modifier.weight(1f),
+                    )
                     TextButton(onClick = onDismissPlacement) {
                         Text("Cancel", color = palette.accent)
                     }
@@ -133,7 +146,7 @@ fun AppDrawer(
                 MicroResultCard(result, palette)
             }
 
-            if (settings.showDrawerCards && query.isBlank() && placementHint == null) {
+            if (settings.showDrawerCards && query.isBlank() && placementHint == null && !selectionMode) {
                 DrawerMediaCard(palette = palette)
                 HorizontalDivider(
                     modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
@@ -175,6 +188,9 @@ fun AppDrawer(
             }
 
             Box(modifier = Modifier.weight(1f).fillMaxSize()) {
+                val tapAction: (AppInfo) -> Unit = { app ->
+                    if (selectionMode) onToggleSelect(app) else onLaunch(app)
+                }
                 when {
                     query.isNotBlank() -> {
                         if (filteredApps.isEmpty() && microResults.isEmpty()) {
@@ -182,11 +198,11 @@ fun AppDrawer(
                                 Text("No matches for \"$query\"", color = palette.textSecondary)
                             }
                         } else {
-                            AppGrid(filteredApps, settings, palette, onLaunch, onLongPress)
+                            AppGrid(filteredApps, settings, palette, selectedKeys, appAliases, tapAction, onLongPress)
                         }
                     }
                     groups.isEmpty() -> {
-                        AppGrid(visibleApps, settings, palette, onLaunch, onLongPress)
+                        AppGrid(visibleApps, settings, palette, selectedKeys, appAliases, tapAction, onLongPress)
                     }
                     else -> {
                         HorizontalPager(
@@ -212,9 +228,31 @@ fun AppDrawer(
                                     )
                                 }
                             } else {
-                                AppGrid(pageApps, settings, palette, onLaunch, onLongPress)
+                                AppGrid(pageApps, settings, palette, selectedKeys, appAliases, tapAction, onLongPress)
                             }
                         }
+                    }
+                }
+            }
+
+            if (selectionMode) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "${selectedKeys.size} selected",
+                        color = palette.textSecondary,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(
+                        onClick = onConfirmSelection,
+                        enabled = selectedKeys.isNotEmpty(),
+                    ) {
+                        Text("Add selected", color = palette.accent, fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -293,6 +331,8 @@ private fun AppGrid(
     apps: List<AppInfo>,
     settings: LauncherSettings,
     palette: LauncherPalette,
+    selectedKeys: Set<String>,
+    appAliases: Map<String, String>,
     onLaunch: (AppInfo) -> Unit,
     onLongPress: (AppInfo) -> Unit,
 ) {
@@ -305,7 +345,15 @@ private fun AppGrid(
             modifier = Modifier.fillMaxSize(),
         ) {
             items(apps, key = { it.key }) { app ->
-                AppIconView(app, settings, palette, onClick = { onLaunch(app) }, onLongClick = { onLongPress(app) })
+                AppIconView(
+                    app = app,
+                    settings = settings,
+                    palette = palette,
+                    onClick = { onLaunch(app) },
+                    onLongClick = { onLongPress(app) },
+                    labelOverride = appAliases[app.key],
+                    selected = app.key in selectedKeys,
+                )
             }
         }
     } else {
@@ -317,7 +365,15 @@ private fun AppGrid(
             modifier = Modifier.fillMaxSize(),
         ) {
             items(apps, key = { it.key }) { app ->
-                AppIconView(app, settings, palette, onClick = { onLaunch(app) }, onLongClick = { onLongPress(app) })
+                AppIconView(
+                    app = app,
+                    settings = settings,
+                    palette = palette,
+                    onClick = { onLaunch(app) },
+                    onLongClick = { onLongPress(app) },
+                    labelOverride = appAliases[app.key],
+                    selected = app.key in selectedKeys,
+                )
             }
         }
     }

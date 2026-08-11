@@ -3,6 +3,7 @@ package com.homelauncher.app.ui.components
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
@@ -57,6 +58,8 @@ fun AppIconView(
     onDragCancel: (() -> Unit)? = null,
     showLabel: Boolean = settings.showLabels,
     size: Dp = settings.iconSizeDp.dp,
+    labelOverride: String? = null,
+    selected: Boolean = false,
 ) {
     var originInRoot by remember { mutableStateOf(Offset.Zero) }
     var dragDistance by remember { mutableFloatStateOf(0f) }
@@ -101,15 +104,27 @@ fun AppIconView(
     ) {
         Image(
             bitmap = app.icon,
-            contentDescription = app.label,
+            contentDescription = labelOverride ?: app.label,
             contentScale = ContentScale.Crop,
             modifier = Modifier
                 .size(size)
-                .clip(iconShape(settings.iconShape)),
+                .clip(iconShape(settings.iconShape))
+                .then(
+                    if (selected) {
+                        Modifier.background(palette.accent.copy(alpha = 0.35f))
+                    } else {
+                        Modifier
+                    },
+                )
+                .border(
+                    width = if (selected) 2.dp else 0.dp,
+                    color = if (selected) palette.accent else Color.Transparent,
+                    shape = iconShape(settings.iconShape),
+                ),
         )
         if (showLabel) {
             Text(
-                text = app.label,
+                text = labelOverride ?: app.label,
                 color = settings.labelColor.toComposeColor(),
                 fontSize = settings.labelSizeSp.sp,
                 maxLines = 1,

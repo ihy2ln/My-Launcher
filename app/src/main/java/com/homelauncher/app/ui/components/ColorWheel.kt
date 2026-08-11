@@ -12,6 +12,7 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -57,80 +58,91 @@ fun ColorWheelPicker(
     color: Long,
     onColorChange: (Long) -> Unit,
     modifier: Modifier = Modifier,
+    label: String = "Color",
+    labelColor: Color = Color(0xFFB0B0B0),
+) {
+    ColorLineSlider(
+        color = color,
+        onColorChange = onColorChange,
+        modifier = modifier,
+        label = label,
+        labelColor = labelColor,
+    )
+}
+
+@Composable
+fun ColorLineSlider(
+    color: Long,
+    onColorChange: (Long) -> Unit,
+    modifier: Modifier = Modifier,
+    label: String = "Color",
+    labelColor: Color = Color(0xFFB0B0B0),
 ) {
     val current = color.toComposeColor()
-    var hue by remember(color) {
-        mutableFloatStateOf(rgbToHsv(current)[0])
-    }
-    var saturation by remember(color) {
-        mutableFloatStateOf(rgbToHsv(current)[1])
-    }
-    var value by remember(color) {
-        mutableFloatStateOf(rgbToHsv(current)[2])
-    }
+    var hue by remember(color) { mutableFloatStateOf(rgbToHsv(current)[0]) }
+    var saturation by remember(color) { mutableFloatStateOf(rgbToHsv(current)[1].coerceAtLeast(0.35f)) }
+    var value by remember(color) { mutableFloatStateOf(rgbToHsv(current)[2].coerceAtLeast(0.35f)) }
 
     fun emit() {
         onColorChange(hsvToColor(hue, saturation, value).toArgbLong())
     }
 
-    Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(modifier = modifier.fillMaxWidth()) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(label, color = labelColor, fontSize = 13.sp, modifier = Modifier.weight(1f))
+            Box(
+                modifier = Modifier
+                    .size(width = 36.dp, height = 20.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(hsvToColor(hue, saturation, value)),
+            )
+        }
+        Spacer(modifier = Modifier.height(10.dp))
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .aspectRatio(1f)
-                .padding(12.dp),
-            contentAlignment = Alignment.Center,
+                .height(28.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(
+                    Brush.horizontalGradient(
+                        listOf(
+                            Color.Red, Color.Yellow, Color.Green, Color.Cyan,
+                            Color.Blue, Color.Magenta, Color.Red,
+                        ),
+                    ),
+                )
+                .pointerInput(Unit) {
+                    fun handle(x: Float) {
+                        hue = ((x / size.width) * 360f).coerceIn(0f, 359.9f)
+                        emit()
+                    }
+                    detectTapGestures { handle(it.x) }
+                    detectDragGestures { change, _ ->
+                        handle(change.position.x)
+                        change.consume()
+                    }
+                },
         ) {
-            Canvas(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .pointerInput(Unit) {
-                        fun handle(offset: Offset) {
-                            val cx = size.width / 2f
-                            val cy = size.height / 2f
-                            val radius = min(cx, cy)
-                            val dx = offset.x - cx
-                            val dy = offset.y - cy
-                            val distance = hypot(dx, dy).coerceAtMost(radius)
-                            var angle = Math.toDegrees(atan2(dy.toDouble(), dx.toDouble())).toFloat()
-                            if (angle < 0) angle += 360f
-                            hue = angle
-                            saturation = (distance / radius).coerceIn(0f, 1f)
-                            emit()
-                        }
-                        detectTapGestures { handle(it) }
-                        detectDragGestures { change, _ ->
-                            handle(change.position)
-                            change.consume()
-                        }
-                    },
-            ) {
-                val radius = size.minDimension / 2f
-                val sweep = Brush.sweepGradient(
-                    listOf(
-                        Color.Red, Color.Yellow, Color.Green, Color.Cyan,
-                        Color.Blue, Color.Magenta, Color.Red,
-                    ),
-                )
-                drawCircle(brush = sweep, radius = radius)
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val x = (hue / 360f) * size.width
                 drawCircle(
-                    brush = Brush.radialGradient(
-                        colors = listOf(Color.White, Color.Transparent),
-                        center = center,
-                        radius = radius,
-                    ),
-                    radius = radius,
+                    color = Color.White,
+                    radius = 12f,
+                    center = Offset(x.coerceIn(12f, size.width - 12f), size.height / 2f),
+                    style = Stroke(width = 3f),
                 )
-                val markerRadius = radius * saturation
-                val rad = Math.toRadians(hue.toDouble())
-                val mx = center.x + markerRadius * cos(rad).toFloat()
-                val my = center.y + markerRadius * sin(rad).toFloat()
-                drawCircle(Color.White, radius = 14f, center = Offset(mx, my), style = Stroke(width = 4f))
-                drawCircle(hsvToColor(hue, saturation, value), radius = 10f, center = Offset(mx, my))
+                drawCircle(
+                    color = hsvToColor(hue, saturation, value),
+                    radius = 8f,
+                    center = Offset(x.coerceIn(12f, size.width - 12f), size.height / 2f),
+                )
             }
         }
 
-        Text("Saturation", color = Color.White.copy(0.7f), fontSize = 12.sp)
+        Text("Saturation", color = labelColor, fontSize = 12.sp, modifier = Modifier.padding(top = 10.dp))
         Slider(
             value = saturation,
             onValueChange = {
@@ -141,7 +153,7 @@ fun ColorWheelPicker(
             modifier = Modifier.fillMaxWidth(),
         )
 
-        Text("Brightness", color = Color.White.copy(0.7f), fontSize = 12.sp)
+        Text("Brightness", color = labelColor, fontSize = 12.sp)
         Slider(
             value = value,
             onValueChange = {
@@ -150,13 +162,6 @@ fun ColorWheelPicker(
             },
             valueRange = 0.15f..1f,
             modifier = Modifier.fillMaxWidth(),
-        )
-
-        Box(
-            modifier = Modifier
-                .size(width = 120.dp, height = 28.dp)
-                .clip(RoundedCornerShape(14.dp))
-                .background(hsvToColor(hue, saturation, value)),
         )
     }
 }

@@ -54,6 +54,7 @@ fun AppActionSheet(
     onUninstall: () -> Unit,
     onRemoveFromHome: () -> Unit,
     onLauncherSettings: () -> Unit,
+    onRename: () -> Unit = {},
     showRemove: Boolean = true,
 ) {
     ModalBottomSheet(
@@ -93,6 +94,7 @@ fun AppActionSheet(
             ActionRow(SheetIcon.Info, "App info", "System application details", onAppInfo)
             ActionRow(SheetIcon.Category, "Add to category", "Put in a drawer tab / group", onAddToCategory)
             ActionRow(SheetIcon.Folder, "Move to folder", "Add to a home screen folder", onMoveToFolder)
+            ActionRow(SheetIcon.Favorite, "Rename", "Custom name on this launcher", onRename)
             if (showRemove) {
                 ActionRow(SheetIcon.Remove, "Remove from home", "Keep installed, remove shortcut", onRemoveFromHome)
             }

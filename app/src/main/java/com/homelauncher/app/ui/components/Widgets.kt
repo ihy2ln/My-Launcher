@@ -1,7 +1,8 @@
 package com.homelauncher.app.ui.components
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -41,20 +42,24 @@ fun HomeWidgetView(
     size: Dp,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    title: String? = null,
+    onLongClick: (() -> Unit)? = null,
 ) {
     when (type) {
-        WidgetType.CLOCK -> ClockWidgetCard(palette, size, onClick, modifier)
-        WidgetType.WEATHER -> WeatherWidgetCard(palette, size, onClick, modifier)
-        WidgetType.APP_DRAWER -> AppDrawerWidgetCard(palette, size, onClick, modifier)
+        WidgetType.CLOCK -> ClockWidgetCard(palette, onClick, modifier, title, onLongClick)
+        WidgetType.WEATHER -> WeatherWidgetCard(palette, onClick, modifier, title, onLongClick)
+        WidgetType.APP_DRAWER -> AppDrawerWidgetCard(palette, onClick, modifier, title, onLongClick)
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ClockWidgetCard(
     palette: LauncherPalette,
-    size: Dp,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    title: String? = null,
+    onLongClick: (() -> Unit)? = null,
 ) {
     var now by remember { mutableStateOf(Date()) }
     LaunchedEffect(Unit) {
@@ -68,38 +73,42 @@ private fun ClockWidgetCard(
 
     Column(
         modifier = modifier
-            .fillMaxWidth()
+            .fillMaxSize()
             .clip(RoundedCornerShape(16.dp))
             .background(palette.surface.copy(alpha = 0.55f))
-            .clickable(onClick = onClick)
-            .padding(8.dp),
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+            .padding(10.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
+        if (!title.isNullOrBlank()) {
+            Text(title, color = palette.textSecondary, fontSize = 10.sp)
+        }
         Text(
             text = time.format(now),
             color = palette.textPrimary,
-            fontSize = 22.sp,
+            fontSize = 28.sp,
             fontWeight = FontWeight.Light,
             textAlign = TextAlign.Center,
         )
         Text(
             text = date.format(now),
             color = palette.textSecondary,
-            fontSize = 10.sp,
+            fontSize = 11.sp,
             textAlign = TextAlign.Center,
         )
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun WeatherWidgetCard(
     palette: LauncherPalette,
-    size: Dp,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    title: String? = null,
+    onLongClick: (() -> Unit)? = null,
 ) {
-    // Demo weather card (no network API key required)
     val temp = remember { 64 + Random.nextInt(0, 12) }
     val condition = remember {
         listOf("Clear", "Cloudy", "Breezy", "Sunny").random()
@@ -107,44 +116,50 @@ private fun WeatherWidgetCard(
 
     Column(
         modifier = modifier
-            .fillMaxWidth()
+            .fillMaxSize()
             .clip(RoundedCornerShape(16.dp))
             .background(Color(0xFF4A90A4).copy(alpha = 0.55f))
-            .clickable(onClick = onClick)
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+            .padding(10.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Text("$temp°", color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Medium)
+        Text(condition, color = Color.White.copy(0.85f), fontSize = 12.sp)
+        Text(title ?: "Weather", color = Color.White.copy(0.65f), fontSize = 10.sp)
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun AppDrawerWidgetCard(
+    palette: LauncherPalette,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    title: String? = null,
+    onLongClick: (() -> Unit)? = null,
+) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .clip(RoundedCornerShape(16.dp))
+            .background(palette.accent.copy(alpha = 0.35f))
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
             .padding(8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Text("$temp°", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Medium)
-        Text(condition, color = Color.White.copy(0.85f), fontSize = 10.sp)
-        Text("Weather", color = Color.White.copy(0.65f), fontSize = 9.sp)
-    }
-}
-
-@Composable
-private fun AppDrawerWidgetCard(
-    palette: LauncherPalette,
-    size: Dp,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
         Box(
             modifier = Modifier
-                .size(size)
+                .size(36.dp)
                 .clip(CircleShape)
-                .background(palette.accent.copy(alpha = 0.9f)),
+                .background(palette.accent),
             contentAlignment = Alignment.Center,
         ) {
-            Text("▦", color = Color.Black, fontSize = 22.sp)
+            Text("∷", color = Color.Black, fontSize = 18.sp, fontWeight = FontWeight.Bold)
         }
         Text(
-            text = "Drawer",
+            title ?: "Apps",
             color = palette.textPrimary,
             fontSize = 11.sp,
             modifier = Modifier.padding(top = 6.dp),

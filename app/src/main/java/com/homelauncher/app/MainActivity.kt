@@ -109,6 +109,13 @@ fun HomeLauncherApp() {
     var moveToFolderApp by remember { mutableStateOf<Pair<Int, AppInfo>?>(null) }
     var openFolder by remember { mutableStateOf<FolderInfo?>(null) }
     var folderAddTarget by remember { mutableStateOf<FolderInfo?>(null) }
+    var groupPickTarget by remember { mutableStateOf<DrawerGroup?>(null) }
+    var groupPickTitle by remember { mutableStateOf("Group") }
+    var multiSelectKeys by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var renameAppTarget by remember { mutableStateOf<AppInfo?>(null) }
+    var renameDraft by remember { mutableStateOf("") }
+    var renameFolderTarget by remember { mutableStateOf<FolderInfo?>(null) }
+    var renameGroupTarget by remember { mutableStateOf<DrawerGroup?>(null) }
     var createFolderDraft by remember { mutableStateOf<Pair<Int, AppInfo>?>(null) }
     var folderTitle by remember { mutableStateOf("Folder") }
     var groupDialog by remember { mutableStateOf(false) }
@@ -177,6 +184,18 @@ fun HomeLauncherApp() {
                     onDropApp = { from, to ->
                         scope.launch { repository.moveHomeSlot(from, to) }
                     },
+                    onFloatingWidgetClick = { widget ->
+                        when (widget.type) {
+                            com.homelauncher.app.model.WidgetType.APP_DRAWER -> overlay = Overlay.Drawer
+                            else -> Unit
+                        }
+                    },
+                    onFloatingWidgetMove = { widget, x, y ->
+                        scope.launch { repository.updateFloatingWidget(widget.copy(xFrac = x, yFrac = y)) }
+                    },
+                    onFloatingWidgetResize = { widget, w, h ->
+                        scope.launch { repository.updateFloatingWidget(widget.copy(widthFrac = w, heightFrac = h)) }
+                    },
                 )
 
                 if (overlay == Overlay.EditHome) {
@@ -214,7 +233,8 @@ fun HomeLauncherApp() {
                         settings = settings,
                         palette = palette,
                         placementHint = when {
-                            folderAddTarget != null -> "Tap an app to add to ${folderAddTarget!!.title}"
+                            folderAddTarget != null -> "Select apps for ${folderAddTarget!!.title}"
+                            groupPickTarget != null -> "Select apps for ${groupPickTitle.ifBlank { "group" }}"
                             else -> placementTarget?.let { target ->
                                 when (target) {
                                     is PlacementTarget.Home -> "Tap an app to place on home screen"
@@ -222,20 +242,66 @@ fun HomeLauncherApp() {
                                 }
                             }
                         },
-                        onLaunch = { app ->
-                            val folderTarget = folderAddTarget
-                            val target = placementTarget
-                            if (folderTarget != null) {
-                                scope.launch {
-                                    val updated = folderTarget.copy(
-                                        appKeys = (folderTarget.appKeys + app.key).distinct(),
-                                    )
-                                    repository.updateFolder(updated)
-                                    folderAddTarget = null
-                                    openFolder = updated
-                                    overlay = Overlay.None
+                        selectionMode = folderAddTarget != null || groupPickTarget != null,
+                        selectedKeys = multiSelectKeys,
+                        appAliases = layout.appAliases,
+                        onToggleSelect = { app ->
+                            multiSelectKeys = if (app.key in multiSelectKeys) {
+                                multiSelectKeys - app.key
+                            } else {
+                                multiSelectKeys + app.key
+                            }
+                        },
+                        onConfirmSelection = {
+                            val keys = multiSelectKeys
+                            scope.launch {
+                                when {
+                                    folderAddTarget != null -> {
+                                        val folder = folderAddTarget!!
+                                        val updated = folder.copy(appKeys = (folder.appKeys + keys).distinct())
+                                        repository.updateFolder(updated)
+                                        folderAddTarget = null
+                                        openFolder = updated
+                                        overlay = Overlay.None
+                                    }
+                                    groupPickTarget != null -> {
+                                        val title = groupPickTitle.ifBlank { "Group" }
+                                        val existing = groupPickTarget
+                                        val seed = appMenuTarget?.key
+                                        val allKeys = (keys + listOfNotNull(seed)).distinct()
+                                        val groups = if (existing != null && layout.drawerGroups.any { it.id == existing.id }) {
+                                            layout.drawerGroups.map {
+                                                if (it.id == existing.id) {
+                                                    it.copy(title = title, appKeys = (it.appKeys + allKeys).distinct())
+                                                } else it
+                                            }
+                                        } else {
+                                            layout.drawerGroups + DrawerGroup(
+                                                id = existing?.id ?: "group_${System.currentTimeMillis()}",
+                                                title = title,
+                                                appKeys = allKeys,
+                                            )
+                                        }
+                                        repository.saveDrawerGroups(groups)
+                                        groupPickTarget = null
+                                        groupDialog = false
+                                        appMenuTarget = null
+                                        overlay = Overlay.None
+                                    }
                                 }
-                            } else if (target == null) {
+                                multiSelectKeys = emptySet()
+                            }
+                        },
+                        onLaunch = { app ->
+                            if (folderAddTarget != null || groupPickTarget != null) {
+                                multiSelectKeys = if (app.key in multiSelectKeys) {
+                                    multiSelectKeys - app.key
+                                } else {
+                                    multiSelectKeys + app.key
+                                }
+                            } else {
+                            val target = placementTarget
+                            if (target == null) {
                                 overlay = Overlay.None
                                 launchApp(context, app)
                             } else {
@@ -263,11 +329,15 @@ fun HomeLauncherApp() {
                                     }
                                 }
                             }
+                            }
                         },
                         onLongPress = { appMenuTarget = it },
                         onDismissPlacement = {
                             placementTarget = null
                             folderAddTarget = null
+                            groupPickTarget = null
+                            groupDialog = false
+                            multiSelectKeys = emptySet()
                             if (returnToEditAfterPick) {
                                 returnToEditAfterPick = false
                                 overlay = Overlay.EditHome
@@ -276,6 +346,8 @@ fun HomeLauncherApp() {
                         onClose = {
                             placementTarget = null
                             folderAddTarget = null
+                            groupPickTarget = null
+                            multiSelectKeys = emptySet()
                             overlay = if (returnToEditAfterPick) {
                                 returnToEditAfterPick = false
                                 Overlay.EditHome
@@ -342,6 +414,11 @@ fun HomeLauncherApp() {
                         TextButton(onClick = {
                             groupDialog = true
                         }) { Text("Add to group…") }
+                        TextButton(onClick = {
+                            renameAppTarget = app
+                            renameDraft = layout.appAliases[app.key] ?: app.label
+                            appMenuTarget = null
+                        }) { Text("Rename") }
                     }
                 },
                 dismissButton = {
@@ -368,27 +445,18 @@ fun HomeLauncherApp() {
                 },
                 confirmButton = {
                     TextButton(onClick = {
-                        scope.launch {
-                            val title = newGroupTitle.ifBlank { "Group" }
-                            val existing = layout.drawerGroups.firstOrNull { it.title.equals(title, true) }
-                            val groups = if (existing != null) {
-                                layout.drawerGroups.map {
-                                    if (it.id == existing.id) it.copy(appKeys = (it.appKeys + app.key).distinct())
-                                    else it
-                                }
-                            } else {
-                                layout.drawerGroups + DrawerGroup(
-                                    id = "group_${System.currentTimeMillis()}",
-                                    title = title,
-                                    appKeys = listOf(app.key),
-                                )
-                            }
-                            repository.saveDrawerGroups(groups)
-                            newGroupTitle = ""
-                            groupDialog = false
-                            appMenuTarget = null
-                        }
-                    }) { Text("Save") }
+                        val title = newGroupTitle.ifBlank { "Group" }
+                        groupPickTitle = title
+                        val existing = layout.drawerGroups.firstOrNull { it.title.equals(title, true) }
+                        groupPickTarget = existing ?: DrawerGroup(
+                            id = "group_${System.currentTimeMillis()}",
+                            title = title,
+                            appKeys = emptyList(),
+                        )
+                        multiSelectKeys = setOf(app.key)
+                        groupDialog = false
+                        overlay = Overlay.Drawer
+                    }) { Text("Choose apps") }
                 },
                 dismissButton = {
                     TextButton(onClick = {
@@ -455,7 +523,13 @@ fun HomeLauncherApp() {
                 },
                 onAddToCategory = {
                     appMenuTarget = app
+                    newGroupTitle = ""
                     groupDialog = true
+                    appActionTarget = null
+                },
+                onRename = {
+                    renameAppTarget = app
+                    renameDraft = layout.appAliases[app.key] ?: app.label
                     appActionTarget = null
                 },
                 onMoveToFolder = {
@@ -485,6 +559,98 @@ fun HomeLauncherApp() {
                     overlay = Overlay.Settings
                 },
                 showRemove = true,
+            )
+        }
+
+        renameAppTarget?.let { app ->
+            AlertDialog(
+                onDismissRequest = { renameAppTarget = null },
+                title = { Text("Rename app") },
+                text = {
+                    Column {
+                        Text("Custom launcher name for ${app.label}")
+                        TextField(
+                            value = renameDraft,
+                            onValueChange = { renameDraft = it },
+                            label = { Text("Name") },
+                            modifier = Modifier.padding(top = 8.dp),
+                        )
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        scope.launch {
+                            repository.setAppAlias(app.key, renameDraft)
+                            renameAppTarget = null
+                        }
+                    }) { Text("Save") }
+                },
+                dismissButton = {
+                    Row {
+                        TextButton(onClick = {
+                            scope.launch {
+                                repository.setAppAlias(app.key, null)
+                                renameAppTarget = null
+                            }
+                        }) { Text("Reset") }
+                        TextButton(onClick = { renameAppTarget = null }) { Text("Cancel") }
+                    }
+                },
+            )
+        }
+
+        renameFolderTarget?.let { folder ->
+            AlertDialog(
+                onDismissRequest = { renameFolderTarget = null },
+                title = { Text("Rename folder") },
+                text = {
+                    TextField(
+                        value = renameDraft,
+                        onValueChange = { renameDraft = it },
+                        label = { Text("Folder name") },
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        scope.launch {
+                            val updated = folder.copy(title = renameDraft.ifBlank { folder.title })
+                            repository.updateFolder(updated)
+                            openFolder = updated
+                            renameFolderTarget = null
+                        }
+                    }) { Text("Save") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { renameFolderTarget = null }) { Text("Cancel") }
+                },
+            )
+        }
+
+        renameGroupTarget?.let { group ->
+            AlertDialog(
+                onDismissRequest = { renameGroupTarget = null },
+                title = { Text("Rename group") },
+                text = {
+                    TextField(
+                        value = renameDraft,
+                        onValueChange = { renameDraft = it },
+                        label = { Text("Group name") },
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        scope.launch {
+                            val groups = layout.drawerGroups.map {
+                                if (it.id == group.id) it.copy(title = renameDraft.ifBlank { group.title }) else it
+                            }
+                            repository.saveDrawerGroups(groups)
+                            renameGroupTarget = null
+                        }
+                    }) { Text("Save") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { renameGroupTarget = null }) { Text("Cancel") }
+                },
             )
         }
 
@@ -579,9 +745,18 @@ fun HomeLauncherApp() {
                 containerColor = palette.drawerBackground,
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Text(liveFolder.title, color = palette.textPrimary, fontSize = 20.sp)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(liveFolder.title, color = palette.textPrimary, fontSize = 20.sp, modifier = Modifier.weight(1f))
+                        TextButton(onClick = {
+                            renameFolderTarget = liveFolder
+                            renameDraft = liveFolder.title
+                        }) { Text("Rename", color = palette.accent) }
+                    }
                     Text(
-                        "${folderApps.size} apps · tap to launch · long-press to remove",
+                        "${folderApps.size} apps · tap to launch · long-press to remove · select multiple via Add apps",
                         color = palette.textSecondary,
                         fontSize = 12.sp,
                         modifier = Modifier.padding(top = 4.dp, bottom = 12.dp),
@@ -621,6 +796,7 @@ fun HomeLauncherApp() {
                                     .fillMaxWidth()
                                     .clickable {
                                         folderAddTarget = liveFolder
+                                        multiSelectKeys = emptySet()
                                         openFolder = null
                                         overlay = Overlay.Drawer
                                     },
@@ -651,6 +827,7 @@ fun HomeLauncherApp() {
                     ) {
                         TextButton(onClick = {
                             folderAddTarget = liveFolder
+                            multiSelectKeys = emptySet()
                             openFolder = null
                             overlay = Overlay.Drawer
                         }) { Text("Add apps", color = palette.accent) }

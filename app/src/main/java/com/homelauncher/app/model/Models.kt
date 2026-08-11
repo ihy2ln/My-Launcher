@@ -95,7 +95,53 @@ data class ModuleStyle(
     val brightness: Float = 0.35f,
     val imageUri: String? = null,
     val videoUri: String? = null,
+    val title: String? = null,
 )
+
+data class FloatingWidget(
+    val id: String,
+    val type: WidgetType,
+    val title: String = "",
+    val xFrac: Float = 0.08f,
+    val yFrac: Float = 0.22f,
+    val widthFrac: Float = 0.42f,
+    val heightFrac: Float = 0.16f,
+) {
+    companion object {
+        fun defaultsFor(type: WidgetType, index: Int = 0): FloatingWidget {
+            val id = "fw_${type.name.lowercase()}_${System.currentTimeMillis()}_$index"
+            return when (type) {
+                WidgetType.CLOCK -> FloatingWidget(
+                    id = id,
+                    type = type,
+                    title = "Clock",
+                    xFrac = 0.08f,
+                    yFrac = 0.18f + index * 0.04f,
+                    widthFrac = 0.55f,
+                    heightFrac = 0.14f,
+                )
+                WidgetType.WEATHER -> FloatingWidget(
+                    id = id,
+                    type = type,
+                    title = "Weather",
+                    xFrac = 0.1f,
+                    yFrac = 0.34f + index * 0.04f,
+                    widthFrac = 0.4f,
+                    heightFrac = 0.16f,
+                )
+                WidgetType.APP_DRAWER -> FloatingWidget(
+                    id = id,
+                    type = type,
+                    title = "App drawer",
+                    xFrac = 0.35f,
+                    yFrac = 0.52f + index * 0.04f,
+                    widthFrac = 0.28f,
+                    heightFrac = 0.12f,
+                )
+            }
+        }
+    }
+}
 
 data class LauncherLayout(
     val homeSlots: List<HomeSlot?>,
@@ -104,11 +150,14 @@ data class LauncherLayout(
     val hiddenApps: Set<String> = emptySet(),
     val drawerGroups: List<DrawerGroup> = emptyList(),
     val moduleStyles: Map<Int, ModuleStyle> = emptyMap(),
+    val floatingWidgets: List<FloatingWidget> = emptyList(),
+    val appAliases: Map<String, String> = emptyMap(),
 )
 
 sealed class HomeSlot {
     data class App(val key: String) : HomeSlot()
     data class Folder(val folderId: String) : HomeSlot()
+    /** Legacy grid widget — migrated to [FloatingWidget] on load. */
     data class Widget(val type: WidgetType, val id: String = "w_${type.name.lowercase()}") : HomeSlot()
 }
 
@@ -116,6 +165,9 @@ fun defaultLayout(homeSize: Int, dockSize: Int) = LauncherLayout(
     homeSlots = List(homeSize) { null },
     dockSlots = List(dockSize) { null },
 )
+
+fun displayAppLabel(key: String, systemLabel: String, aliases: Map<String, String>): String =
+    aliases[key]?.takeIf { it.isNotBlank() } ?: systemLabel
 
 fun Color.toArgbLong(): Long {
     val a = (alpha * 255).toInt()

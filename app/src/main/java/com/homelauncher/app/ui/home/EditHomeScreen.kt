@@ -84,6 +84,9 @@ fun EditHomeScreen(
     var moduleEditIndex by remember { mutableStateOf<Int?>(null) }
     var createGroupIndex by remember { mutableStateOf<Int?>(null) }
     var groupTitle by remember { mutableStateOf("Group") }
+    var editingWidgetId by remember { mutableStateOf<String?>(null) }
+    var widgetTitleDraft by remember { mutableStateOf("") }
+    var showWidgetPicker by remember { mutableStateOf(false) }
 
     val takePersistable = { uri: Uri ->
         runCatching {
@@ -201,15 +204,16 @@ fun EditHomeScreen(
                     }
 
                     Text(
-                        text = "Tap + to add apps, widgets, or groups",
+                        text = "Tap + for apps/groups · Widgets float freely — drag to move, corner to resize",
                         color = Color.White.copy(0.75f),
                         fontSize = 12.sp,
                         modifier = Modifier.padding(top = 8.dp, bottom = 8.dp),
                     )
 
+                    Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                     LazyVerticalGrid(
                         columns = GridCells.Fixed(settings.homeColumns),
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(bottom = 8.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -270,27 +274,7 @@ fun EditHomeScreen(
                                         }
                                     }
                                 }
-                                is HomeSlot.Widget -> {
-                                    ModulePlate(
-                                        opacity = opacity,
-                                        imageUri = style?.imageUri,
-                                        videoUri = style?.videoUri,
-                                        color = style?.color ?: 0xFF1A1A1A,
-                                        saturation = style?.saturation ?: 0.2f,
-                                        brightness = style?.brightness ?: 0.4f,
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .height(84.dp),
-                                    ) {
-                                        HomeWidgetView(
-                                            type = slot.type,
-                                            palette = palette,
-                                            size = settings.iconSizeDp.dp,
-                                            onClick = { addTargetIndex = index },
-                                        )
-                                    }
-                                }
-                                null -> {
+                                is HomeSlot.Widget, null -> {
                                     ModulePlate(
                                         opacity = opacity,
                                         imageUri = style?.imageUri,
@@ -316,6 +300,28 @@ fun EditHomeScreen(
                             }
                         }
                     }
+
+                    FloatingWidgetsLayer(
+                        widgets = layout.floatingWidgets,
+                        palette = palette,
+                        editable = true,
+                        onClick = { /* keep selected via long-press rename */ },
+                        onLongPress = { widget ->
+                            editingWidgetId = widget.id
+                            widgetTitleDraft = widget.title
+                        },
+                        onMove = { widget, x, y ->
+                            scope.launch {
+                                repository.updateFloatingWidget(widget.copy(xFrac = x, yFrac = y))
+                            }
+                        },
+                        onResize = { widget, w, h ->
+                            scope.launch {
+                                repository.updateFloatingWidget(widget.copy(widthFrac = w, heightFrac = h))
+                            }
+                        },
+                    )
+                    } // end Box
                 }
             }
 
@@ -331,10 +337,7 @@ fun EditHomeScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 EditBarAction("Wallpapers", "▣") { showWallpaperSheet = true }
-                EditBarAction("Widgets") {
-                    val empty = layout.homeSlots.indexOfFirst { it == null }
-                    if (empty >= 0) addTargetIndex = empty
-                }
+                EditBarAction("Widgets") { showWidgetPicker = true }
                 EditBarAction("Settings", "⚙", onOpenSettings)
             }
         }
@@ -379,6 +382,72 @@ fun EditHomeScreen(
         }
     }
 
+    if (showWidgetPicker) {
+        ModalBottomSheet(
+            onDismissRequest = { showWidgetPicker = false },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            containerColor = palette.drawerBackground,
+        ) {
+            Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Add widget", color = palette.textPrimary, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+                Text("Widgets float freely — drag to move, use the corner handle to resize.", color = palette.textSecondary, fontSize = 12.sp)
+                listOf(
+                    WidgetType.CLOCK to "Clock",
+                    WidgetType.WEATHER to "Weather",
+                    WidgetType.APP_DRAWER to "App drawer button",
+                ).forEach { (type, label) ->
+                    ActionCard(label, "Free-form size and position", palette) {
+                        scope.launch { repository.addFloatingWidget(type) }
+                        showWidgetPicker = false
+                    }
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+        }
+    }
+
+    editingWidgetId?.let { id ->
+        val widget = layout.floatingWidgets.firstOrNull { it.id == id }
+        if (widget == null) {
+            editingWidgetId = null
+        } else {
+            AlertDialog(
+                onDismissRequest = { editingWidgetId = null },
+                title = { Text("Widget") },
+                text = {
+                    Column {
+                        Text("Rename and manage this floating widget.")
+                        androidx.compose.material3.TextField(
+                            value = widgetTitleDraft,
+                            onValueChange = { widgetTitleDraft = it },
+                            label = { Text("Name") },
+                            modifier = Modifier.padding(top = 8.dp),
+                        )
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        scope.launch {
+                            repository.updateFloatingWidget(widget.copy(title = widgetTitleDraft.ifBlank { widget.title }))
+                            editingWidgetId = null
+                        }
+                    }) { Text("Save") }
+                },
+                dismissButton = {
+                    Row {
+                        TextButton(onClick = {
+                            scope.launch {
+                                repository.removeFloatingWidget(id)
+                                editingWidgetId = null
+                            }
+                        }) { Text("Remove") }
+                        TextButton(onClick = { editingWidgetId = null }) { Text("Cancel") }
+                    }
+                },
+            )
+        }
+    }
+
     addTargetIndex?.let { index ->
         AddItemSheet(
             palette = palette,
@@ -389,7 +458,7 @@ fun EditHomeScreen(
             },
             onWidget = { type ->
                 scope.launch {
-                    repository.setHomeSlot(index, HomeSlot.Widget(type))
+                    repository.addFloatingWidget(type)
                     addTargetIndex = null
                 }
             },
@@ -418,6 +487,16 @@ fun EditHomeScreen(
             title = { Text("Module style") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Name this module", fontSize = 12.sp)
+                    androidx.compose.material3.TextField(
+                        value = style.title.orEmpty(),
+                        onValueChange = { value ->
+                            scope.launch {
+                                repository.setModuleStyle(index, style.copy(title = value.ifBlank { null }))
+                            }
+                        },
+                        label = { Text("Module name") },
+                    )
                     Text("Color, saturation & brightness", fontSize = 12.sp)
                     ColorWheelPicker(
                         color = style.color,
@@ -563,11 +642,11 @@ private fun AddItemSheet(
         ) {
             Text("Add to home", color = palette.textPrimary, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
             ActionCard("App", "Pick an installed app", palette, onApp)
-            ActionCard("Clock widget", "Live clock module", palette) { onWidget(WidgetType.CLOCK) }
-            ActionCard("Weather widget", "Local weather card", palette) { onWidget(WidgetType.WEATHER) }
-            ActionCard("App drawer", "Shortcut to open all apps", palette) { onWidget(WidgetType.APP_DRAWER) }
+            ActionCard("Clock widget", "Free-form floating clock", palette) { onWidget(WidgetType.CLOCK) }
+            ActionCard("Weather widget", "Free-form weather card", palette) { onWidget(WidgetType.WEATHER) }
+            ActionCard("App drawer", "Floating shortcut to all apps", palette) { onWidget(WidgetType.APP_DRAWER) }
             ActionCard("Group / folder", "Create an empty group", palette, onGroup)
-            ActionCard("Module style", "Opacity, picture, or video", palette, onStyle)
+            ActionCard("Module style", "Opacity, picture, video, rename", palette, onStyle)
             ActionCard("Remove", "Clear this cell", palette, onRemove)
             androidx.compose.foundation.layout.Spacer(modifier = Modifier.height(16.dp))
         }
