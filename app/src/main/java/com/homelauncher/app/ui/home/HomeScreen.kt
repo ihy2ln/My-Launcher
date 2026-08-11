@@ -2,6 +2,7 @@ package com.homelauncher.app.ui.home
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
@@ -42,9 +43,14 @@ import com.homelauncher.app.model.GestureAction
 import com.homelauncher.app.model.HomeSlot
 import com.homelauncher.app.model.LauncherLayout
 import com.homelauncher.app.model.LauncherSettings
+import com.homelauncher.app.model.ModuleStyle
+import com.homelauncher.app.model.WallpaperMode
+import com.homelauncher.app.model.WidgetType
 import com.homelauncher.app.ui.components.AppIconView
-import com.homelauncher.app.ui.components.EmptySlotView
 import com.homelauncher.app.ui.components.FolderIconView
+import com.homelauncher.app.ui.components.HomeWidgetView
+import com.homelauncher.app.ui.components.ModulePlate
+import com.homelauncher.app.ui.components.WallpaperBackdrop
 import com.homelauncher.app.ui.theme.LauncherPalette
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -59,22 +65,22 @@ fun HomeScreen(
     onGesture: (GestureAction) -> Unit,
     onLaunch: (AppInfo) -> Unit,
     onOpenFolder: (FolderInfo) -> Unit,
+    onWidgetClick: (WidgetType) -> Unit,
     onEmptyHomeSlot: (Int) -> Unit,
     onEmptyDockSlot: (Int) -> Unit,
     onLongPressHome: (Int) -> Unit,
     onLongPressDock: (Int) -> Unit,
-    onOpenSettings: () -> Unit,
+    onEditHome: () -> Unit,
 ) {
     var cumulativeDragY by remember { mutableStateOf(0f) }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(palette.wallpaper)
             .pointerInput(settings) {
                 detectTapGestures(
                     onDoubleTap = { onGesture(settings.doubleTap) },
-                    onLongPress = { onOpenSettings() },
+                    onLongPress = { onEditHome() },
                 )
             }
             .pointerInput(settings) {
@@ -92,62 +98,51 @@ fun HomeScreen(
                         cumulativeDragY = 0f
                     },
                     onDragCancel = { cumulativeDragY = 0f },
-                    onDrag = { _, dragAmount ->
-                        cumulativeDragY += dragAmount.y
-                    },
+                    onDrag = { _, dragAmount -> cumulativeDragY += dragAmount.y },
                 )
             },
     ) {
+        WallpaperBackdrop(
+            color = settings.wallpaperColor,
+            imageUri = settings.wallpaperImageUri,
+            videoUri = settings.wallpaperVideoUri,
+            useImage = settings.wallpaperMode == WallpaperMode.IMAGE,
+            useVideo = settings.wallpaperMode == WallpaperMode.VIDEO,
+            gradientFallback = palette.wallpaper,
+        )
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .statusBarsPadding()
-                .padding(horizontal = 16.dp),
+                .padding(horizontal = 14.dp),
         ) {
-            ClockWidget(palette = palette, modifier = Modifier.padding(top = 20.dp, bottom = 16.dp))
+            ClockWidget(palette = palette, modifier = Modifier.padding(top = 18.dp, bottom = 14.dp))
 
             LazyVerticalGrid(
                 columns = GridCells.Fixed(settings.homeColumns),
                 modifier = Modifier.weight(1f),
                 contentPadding = PaddingValues(bottom = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 userScrollEnabled = false,
             ) {
                 items(layout.homeSlots.size) { index ->
-                    when (val slot = layout.homeSlots[index]) {
-                        is HomeSlot.App -> {
-                            val app = findApp(apps, slot.key)
-                            if (app != null) {
-                                AppIconView(
-                                    app = app,
-                                    settings = settings,
-                                    palette = palette,
-                                    onClick = { onLaunch(app) },
-                                    onLongClick = { onLongPressHome(index) },
-                                )
-                            } else {
-                                EmptySlotView(settings.iconSizeDp.dp, palette) { onEmptyHomeSlot(index) }
-                            }
-                        }
-                        is HomeSlot.Folder -> {
-                            val folder = layout.folders[slot.folderId]
-                            if (folder != null) {
-                                val preview = folder.appKeys.mapNotNull { findApp(apps, it) }
-                                FolderIconView(
-                                    folder = folder,
-                                    previewApps = preview,
-                                    settings = settings,
-                                    palette = palette,
-                                    onClick = { onOpenFolder(folder) },
-                                    onLongClick = { onLongPressHome(index) },
-                                )
-                            } else {
-                                EmptySlotView(settings.iconSizeDp.dp, palette) { onEmptyHomeSlot(index) }
-                            }
-                        }
-                        null -> EmptySlotView(settings.iconSizeDp.dp, palette) { onEmptyHomeSlot(index) }
-                    }
+                    HomeCell(
+                        slot = layout.homeSlots[index],
+                        style = layout.moduleStyles[index],
+                        defaultOpacity = settings.moduleOpacity,
+                        apps = apps,
+                        folders = layout.folders,
+                        settings = settings,
+                        palette = palette,
+                        showEmpty = false,
+                        onLaunch = onLaunch,
+                        onOpenFolder = onOpenFolder,
+                        onWidgetClick = onWidgetClick,
+                        onEmpty = { onEmptyHomeSlot(index) },
+                        onLongPress = { onLongPressHome(index) },
+                    )
                 }
             }
 
@@ -163,6 +158,85 @@ fun HomeScreen(
 
             DrawerHint(palette)
         }
+    }
+}
+
+@Composable
+fun HomeCell(
+    slot: HomeSlot?,
+    style: ModuleStyle?,
+    defaultOpacity: Float,
+    apps: List<AppInfo>,
+    folders: Map<String, FolderInfo>,
+    settings: LauncherSettings,
+    palette: LauncherPalette,
+    showEmpty: Boolean,
+    onLaunch: (AppInfo) -> Unit,
+    onOpenFolder: (FolderInfo) -> Unit,
+    onWidgetClick: (WidgetType) -> Unit,
+    onEmpty: () -> Unit,
+    onLongPress: () -> Unit,
+) {
+    val opacity = style?.opacity ?: defaultOpacity
+    when (slot) {
+        is HomeSlot.App -> {
+            val app = findApp(apps, slot.key)
+            if (app != null) {
+                AppIconView(
+                    app = app,
+                    settings = settings,
+                    palette = palette,
+                    onClick = { onLaunch(app) },
+                    onLongClick = onLongPress,
+                )
+            } else if (showEmpty) {
+                EmptyModule(opacity, style, onEmpty)
+            }
+        }
+        is HomeSlot.Folder -> {
+            val folder = folders[slot.folderId]
+            if (folder != null) {
+                FolderIconView(
+                    folder = folder,
+                    previewApps = folder.appKeys.mapNotNull { findApp(apps, it) },
+                    settings = settings,
+                    palette = palette,
+                    onClick = { onOpenFolder(folder) },
+                    onLongClick = onLongPress,
+                )
+            } else if (showEmpty) {
+                EmptyModule(opacity, style, onEmpty)
+            }
+        }
+        is HomeSlot.Widget -> {
+            HomeWidgetView(
+                type = slot.type,
+                palette = palette,
+                size = settings.iconSizeDp.dp,
+                onClick = { onWidgetClick(slot.type) },
+            )
+        }
+        null -> if (showEmpty) EmptyModule(opacity, style, onEmpty) else Box(modifier = Modifier.size(settings.iconSizeDp.dp))
+    }
+}
+
+@Composable
+private fun EmptyModule(opacity: Float, style: ModuleStyle?, onClick: () -> Unit) {
+    ModulePlate(
+        opacity = opacity,
+        imageUri = style?.imageUri,
+        videoUri = style?.videoUri,
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(72.dp)
+            .clickable(onClick = onClick),
+    ) {
+        Text(
+            text = "+",
+            color = Color.White.copy(alpha = 0.5f),
+            fontSize = 26.sp,
+            modifier = Modifier.padding(8.dp),
+        )
     }
 }
 
@@ -231,11 +305,17 @@ fun DockBar(
                                 showLabel = false,
                                 size = (settings.iconSizeDp - 4).dp,
                             )
-                        } else {
-                            EmptySlotView((settings.iconSizeDp - 4).dp, palette) { onEmptySlot(index) }
                         }
                     }
-                    else -> EmptySlotView((settings.iconSizeDp - 4).dp, palette) { onEmptySlot(index) }
+                    is HomeSlot.Widget -> {
+                        HomeWidgetView(
+                            type = slot.type,
+                            palette = palette,
+                            size = (settings.iconSizeDp - 4).dp,
+                            onClick = { },
+                        )
+                    }
+                    else -> { }
                 }
             }
         }
@@ -257,6 +337,6 @@ fun DrawerHint(palette: LauncherPalette) {
                 .background(Color.White.copy(alpha = 0.45f)),
         )
         Spacer(modifier = Modifier.height(6.dp))
-        Text("Swipe up for apps · long-press for settings", color = palette.textSecondary, fontSize = 11.sp)
+        Text("Swipe up for apps · long-press to edit", color = palette.textSecondary, fontSize = 11.sp)
     }
 }

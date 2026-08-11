@@ -369,7 +369,7 @@ private fun GesturePicker(
 ) {
     ChoiceRow(
         title = title,
-        options = listOf("None", "App drawer", "Search", "Settings", "Notifications"),
+        options = listOf("None", "App drawer", "Search", "Settings", "Notifications", "Edit home"),
         selected = value.ordinal,
         palette = palette,
         onSelect = { onSelect(GestureAction.entries[it]) },

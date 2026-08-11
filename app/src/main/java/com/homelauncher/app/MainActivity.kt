@@ -47,6 +47,7 @@ import com.homelauncher.app.model.LauncherSettings
 import com.homelauncher.app.model.defaultLayout
 import com.homelauncher.app.ui.components.AppIconView
 import com.homelauncher.app.ui.drawer.AppDrawer
+import com.homelauncher.app.ui.home.EditHomeScreen
 import com.homelauncher.app.ui.home.HomeScreen
 import com.homelauncher.app.ui.settings.SettingsScreen
 import com.homelauncher.app.ui.theme.HomeLauncherTheme
@@ -73,6 +74,7 @@ private sealed interface Overlay {
     data object Drawer : Overlay
     data object SearchDrawer : Overlay
     data object Settings : Overlay
+    data object EditHome : Overlay
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -88,6 +90,7 @@ fun HomeLauncherApp() {
     )
 
     var overlay by remember { mutableStateOf<Overlay>(Overlay.None) }
+    var returnToEditAfterPick by remember { mutableStateOf(false) }
     var placementTarget by remember { mutableStateOf<PlacementTarget?>(null) }
     var appMenuTarget by remember { mutableStateOf<AppInfo?>(null) }
     var removeTarget by remember { mutableStateOf<PlacementTarget?>(null) }
@@ -114,6 +117,7 @@ fun HomeLauncherApp() {
             }
             GestureAction.OPEN_SETTINGS -> overlay = Overlay.Settings
             GestureAction.EXPAND_NOTIFICATIONS -> expandNotifications(context)
+            GestureAction.EDIT_HOME -> overlay = Overlay.EditHome
         }
     }
 
@@ -129,9 +133,16 @@ fun HomeLauncherApp() {
                     onGesture = ::runGesture,
                     onLaunch = { launchApp(context, it) },
                     onOpenFolder = { openFolder = it },
+                    onWidgetClick = { type ->
+                        when (type) {
+                            com.homelauncher.app.model.WidgetType.APP_DRAWER -> overlay = Overlay.Drawer
+                            com.homelauncher.app.model.WidgetType.CLOCK,
+                            com.homelauncher.app.model.WidgetType.WEATHER -> Unit
+                        }
+                    },
                     onEmptyHomeSlot = { index ->
+                        overlay = Overlay.EditHome
                         placementTarget = PlacementTarget.Home(index)
-                        overlay = Overlay.Drawer
                     },
                     onEmptyDockSlot = { index ->
                         placementTarget = PlacementTarget.Dock(index)
@@ -139,8 +150,28 @@ fun HomeLauncherApp() {
                     },
                     onLongPressHome = { removeTarget = PlacementTarget.Home(it) },
                     onLongPressDock = { removeTarget = PlacementTarget.Dock(it) },
-                    onOpenSettings = { overlay = Overlay.Settings },
+                    onEditHome = { overlay = Overlay.EditHome },
                 )
+
+                if (overlay == Overlay.EditHome) {
+                    EditHomeScreen(
+                        layout = layout,
+                        apps = apps,
+                        settings = settings,
+                        palette = palette,
+                        repository = repository,
+                        onDone = {
+                            overlay = Overlay.None
+                            placementTarget = null
+                        },
+                        onPickAppForSlot = { index ->
+                            placementTarget = PlacementTarget.Home(index)
+                            returnToEditAfterPick = true
+                            overlay = Overlay.Drawer
+                        },
+                        onOpenSettings = { overlay = Overlay.Settings },
+                    )
+                }
 
                 AnimatedVisibility(
                     visible = overlay == Overlay.Drawer || overlay == Overlay.SearchDrawer,
@@ -181,15 +212,31 @@ fun HomeLauncherApp() {
                                         }
                                     }
                                     placementTarget = null
-                                    overlay = Overlay.None
+                                    overlay = if (returnToEditAfterPick) {
+                                        returnToEditAfterPick = false
+                                        Overlay.EditHome
+                                    } else {
+                                        Overlay.None
+                                    }
                                 }
                             }
                         },
                         onLongPress = { appMenuTarget = it },
-                        onDismissPlacement = { placementTarget = null },
-                        onClose = {
-                            overlay = Overlay.None
+                        onDismissPlacement = {
                             placementTarget = null
+                            if (returnToEditAfterPick) {
+                                returnToEditAfterPick = false
+                                overlay = Overlay.EditHome
+                            }
+                        },
+                        onClose = {
+                            placementTarget = null
+                            overlay = if (returnToEditAfterPick) {
+                                returnToEditAfterPick = false
+                                Overlay.EditHome
+                            } else {
+                                Overlay.None
+                            }
                         },
                     )
                 }
@@ -344,6 +391,7 @@ fun HomeLauncherApp() {
             val label = when (slot) {
                 is HomeSlot.App -> findApp(apps, slot.key)?.label ?: "app"
                 is HomeSlot.Folder -> layout.folders[slot.folderId]?.title ?: "folder"
+                is HomeSlot.Widget -> slot.type.name.lowercase().replace('_', ' ')
                 null -> "item"
             }
             AlertDialog(
