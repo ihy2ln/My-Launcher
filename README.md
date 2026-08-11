@@ -12,23 +12,21 @@ A Nova-inspired Android home screen launcher built with Kotlin and Jetpack Compo
 
 ## Install on your phone
 
-1. Open this project in Android Studio (or build from the command line).
-2. Connect your Android device with USB debugging enabled, or use an emulator.
-3. Build and run the `app` module.
-4. Press the Home button and choose **Home Launcher** when prompted.
-5. Select **Always** to set it as your default launcher.
+Download the latest APK from the [Releases](https://github.com/ihy2ln/My-Launcher/releases) page, transfer it to your Android device, and open it to install. You may need to allow installs from unknown sources.
 
-### Build from the command line
+Or build from source:
 
 ```bash
 ./gradlew assembleDebug
 ```
 
-The APK is written to `app/build/outputs/apk/debug/app-debug.apk`. Transfer it to your phone and install, or run:
+The APK is written to `app/build/outputs/apk/release/app-release.apk`. Transfer it to your phone and install, or run:
 
 ```bash
-./gradlew installDebug
+./gradlew installRelease
 ```
+
+After installing, press the Home button and choose **Home Launcher** → **Always**.
 
 ## Usage
 
