@@ -200,7 +200,7 @@ fun HomeScreen(
                                     folders = layout.folders,
                                     settings = settings,
                                     palette = palette,
-                                    showEmpty = true,
+                                    showEmpty = false,
                                     highlighted = isHoverTarget && slot is HomeSlot.Folder,
                                     appAliases = layout.appAliases,
                                     onLaunch = onLaunch,
@@ -353,7 +353,12 @@ fun HomeCell(
             // Legacy grid widgets are migrated to floating widgets; keep cell empty.
             if (showEmpty) EmptyModule(opacity, style, onEmpty)
         }
-        null -> if (showEmpty) EmptyModule(opacity, style, onEmpty) else Box(modifier = Modifier.size(settings.iconSizeDp.dp))
+        null -> if (showEmpty) {
+            EmptyModule(opacity, style, onEmpty)
+        } else {
+            // Invisible spacer — keeps grid alignment without "+" clutter
+            Box(modifier = Modifier.height(76.dp).fillMaxWidth())
+        }
     }
 }
 
@@ -479,7 +484,7 @@ fun DrawerHint(palette: LauncherPalette) {
         )
         Spacer(modifier = Modifier.height(6.dp))
         Text(
-            "Tap folder to open · hold app to move / drag into folder",
+            "Swipe up for apps",
             color = palette.textSecondary,
             fontSize = 11.sp,
         )

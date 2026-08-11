@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import com.homelauncher.app.model.FloatingWidget
 import com.homelauncher.app.model.WidgetType
+import com.homelauncher.app.model.displayName
 import com.homelauncher.app.ui.components.HomeWidgetView
 import com.homelauncher.app.ui.theme.LauncherPalette
 import kotlin.math.roundToInt
@@ -93,13 +94,7 @@ fun FloatingWidgetsLayer(
                     type = widget.type,
                     palette = palette,
                     size = hDp,
-                    title = widget.title.ifBlank {
-                        when (widget.type) {
-                            WidgetType.CLOCK -> "Clock"
-                            WidgetType.WEATHER -> "Weather"
-                            WidgetType.APP_DRAWER -> "Apps"
-                        }
-                    },
+                    title = widget.title.ifBlank { widget.type.displayName() },
                     onClick = { onClick(widget) },
                     onLongClick = { onLongPress(widget) },
                     modifier = Modifier.fillMaxSize(),

@@ -47,12 +47,18 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.homelauncher.app.data.LauncherRepository
+import com.homelauncher.app.findApp
+import com.homelauncher.app.launchApp
+import com.homelauncher.app.launchPackageOrUrl
+import com.homelauncher.app.loadInstalledApps
 import com.homelauncher.app.model.DrawerGroup
 import com.homelauncher.app.model.FolderInfo
 import com.homelauncher.app.model.GestureAction
 import com.homelauncher.app.model.HomeSlot
 import com.homelauncher.app.model.LauncherSettings
 import com.homelauncher.app.model.defaultLayout
+import com.homelauncher.app.model.launchPackages
+import com.homelauncher.app.model.webFallback
 import com.homelauncher.app.ui.components.AppActionSheet
 import com.homelauncher.app.ui.components.AppIconView
 import com.homelauncher.app.ui.components.openAppInfo
@@ -159,6 +165,7 @@ fun HomeLauncherApp() {
                             com.homelauncher.app.model.WidgetType.APP_DRAWER -> overlay = Overlay.Drawer
                             com.homelauncher.app.model.WidgetType.CLOCK,
                             com.homelauncher.app.model.WidgetType.WEATHER -> Unit
+                            else -> launchPackageOrUrl(context, type.launchPackages(), type.webFallback())
                         }
                     },
                     onEmptyHomeSlot = { index ->
@@ -187,7 +194,15 @@ fun HomeLauncherApp() {
                     onFloatingWidgetClick = { widget ->
                         when (widget.type) {
                             com.homelauncher.app.model.WidgetType.APP_DRAWER -> overlay = Overlay.Drawer
-                            else -> Unit
+                            com.homelauncher.app.model.WidgetType.CLOCK,
+                            com.homelauncher.app.model.WidgetType.WEATHER -> Unit
+                            else -> {
+                                launchPackageOrUrl(
+                                    context,
+                                    widget.type.launchPackages(),
+                                    widget.type.webFallback(),
+                                )
+                            }
                         }
                     },
                     onFloatingWidgetMove = { widget, x, y ->

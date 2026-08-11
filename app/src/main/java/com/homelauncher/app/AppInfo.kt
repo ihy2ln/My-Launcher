@@ -53,6 +53,29 @@ fun launchApp(context: Context, app: AppInfo) {
     context.startActivity(intent)
 }
 
+fun launchPackageOrUrl(context: Context, packages: List<String>, webFallback: String?): Boolean {
+    val pm = context.packageManager
+    for (pkg in packages) {
+        val launch = pm.getLaunchIntentForPackage(pkg)
+        if (launch != null) {
+            launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(launch)
+            return true
+        }
+    }
+    if (!webFallback.isNullOrBlank()) {
+        runCatching {
+            context.startActivity(
+                Intent(Intent.ACTION_VIEW, android.net.Uri.parse(webFallback)).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                },
+            )
+            return true
+        }
+    }
+    return false
+}
+
 fun expandNotifications(context: Context) {
     try {
         val statusBarService = context.getSystemService("statusbar")

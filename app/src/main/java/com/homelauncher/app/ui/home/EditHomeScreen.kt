@@ -391,11 +391,7 @@ fun EditHomeScreen(
             Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("Add widget", color = palette.textPrimary, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
                 Text("Widgets float freely — drag to move, use the corner handle to resize.", color = palette.textSecondary, fontSize = 12.sp)
-                listOf(
-                    WidgetType.CLOCK to "Clock",
-                    WidgetType.WEATHER to "Weather",
-                    WidgetType.APP_DRAWER to "App drawer button",
-                ).forEach { (type, label) ->
+                com.homelauncher.app.ui.components.widgetCatalog().forEach { (type, label) ->
                     ActionCard(label, "Free-form size and position", palette) {
                         scope.launch { repository.addFloatingWidget(type) }
                         showWidgetPicker = false
@@ -642,9 +638,9 @@ private fun AddItemSheet(
         ) {
             Text("Add to home", color = palette.textPrimary, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
             ActionCard("App", "Pick an installed app", palette, onApp)
-            ActionCard("Clock widget", "Free-form floating clock", palette) { onWidget(WidgetType.CLOCK) }
-            ActionCard("Weather widget", "Free-form weather card", palette) { onWidget(WidgetType.WEATHER) }
-            ActionCard("App drawer", "Floating shortcut to all apps", palette) { onWidget(WidgetType.APP_DRAWER) }
+            com.homelauncher.app.ui.components.widgetCatalog().forEach { (type, label) ->
+                ActionCard(label, "Free-form floating widget", palette) { onWidget(type) }
+            }
             ActionCard("Group / folder", "Create an empty group", palette, onGroup)
             ActionCard("Module style", "Opacity, picture, video, rename", palette, onStyle)
             ActionCard("Remove", "Clear this cell", palette, onRemove)

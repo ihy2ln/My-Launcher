@@ -29,6 +29,59 @@ enum class WidgetType {
     CLOCK,
     WEATHER,
     APP_DRAWER,
+    YOUTUBE,
+    POWERAMP,
+    TWITCH,
+    SPOTIFY,
+    SEARCH,
+    CALENDAR,
+    NOTES,
+}
+
+fun WidgetType.displayName(): String = when (this) {
+    WidgetType.CLOCK -> "Clock"
+    WidgetType.WEATHER -> "Weather"
+    WidgetType.APP_DRAWER -> "App drawer"
+    WidgetType.YOUTUBE -> "YouTube"
+    WidgetType.POWERAMP -> "Poweramp"
+    WidgetType.TWITCH -> "Twitch"
+    WidgetType.SPOTIFY -> "Spotify"
+    WidgetType.SEARCH -> "Search"
+    WidgetType.CALENDAR -> "Calendar"
+    WidgetType.NOTES -> "Notes"
+}
+
+fun WidgetType.brandColor(): Long = when (this) {
+    WidgetType.CLOCK -> 0xFF2A2A2E
+    WidgetType.WEATHER -> 0xFF4A90A4
+    WidgetType.APP_DRAWER -> 0xFF82B1FF
+    WidgetType.YOUTUBE -> 0xFFFF0000
+    WidgetType.POWERAMP -> 0xFFF5A623
+    WidgetType.TWITCH -> 0xFF9146FF
+    WidgetType.SPOTIFY -> 0xFF1DB954
+    WidgetType.SEARCH -> 0xFF4285F4
+    WidgetType.CALENDAR -> 0xFFEA4335
+    WidgetType.NOTES -> 0xFFFFC107
+}
+
+/** Preferred package names to launch for media / utility widgets. */
+fun WidgetType.launchPackages(): List<String> = when (this) {
+    WidgetType.YOUTUBE -> listOf("com.google.android.youtube", "com.vanced.android.youtube")
+    WidgetType.POWERAMP -> listOf("com.maxmpz.audioplayer", "com.maxmpz.audioplayer.unlock")
+    WidgetType.TWITCH -> listOf("tv.twitch.android.app")
+    WidgetType.SPOTIFY -> listOf("com.spotify.music")
+    WidgetType.SEARCH -> listOf("com.google.android.googlequicksearchbox", "com.android.chrome")
+    WidgetType.CALENDAR -> listOf("com.google.android.calendar", "com.samsung.android.calendar")
+    WidgetType.NOTES -> listOf("com.google.android.keep", "com.samsung.android.app.notes")
+    else -> emptyList()
+}
+
+fun WidgetType.webFallback(): String? = when (this) {
+    WidgetType.YOUTUBE -> "https://www.youtube.com"
+    WidgetType.TWITCH -> "https://www.twitch.tv"
+    WidgetType.SPOTIFY -> "https://open.spotify.com"
+    WidgetType.SEARCH -> "https://www.google.com"
+    else -> null
 }
 
 enum class WallpaperMode {
@@ -110,33 +163,47 @@ data class FloatingWidget(
     companion object {
         fun defaultsFor(type: WidgetType, index: Int = 0): FloatingWidget {
             val id = "fw_${type.name.lowercase()}_${System.currentTimeMillis()}_$index"
+            val stagger = (index % 5) * 0.03f
             return when (type) {
                 WidgetType.CLOCK -> FloatingWidget(
-                    id = id,
-                    type = type,
-                    title = "Clock",
-                    xFrac = 0.08f,
-                    yFrac = 0.18f + index * 0.04f,
-                    widthFrac = 0.55f,
-                    heightFrac = 0.14f,
+                    id = id, type = type, title = type.displayName(),
+                    xFrac = 0.08f, yFrac = 0.18f + stagger, widthFrac = 0.55f, heightFrac = 0.14f,
                 )
                 WidgetType.WEATHER -> FloatingWidget(
-                    id = id,
-                    type = type,
-                    title = "Weather",
-                    xFrac = 0.1f,
-                    yFrac = 0.34f + index * 0.04f,
-                    widthFrac = 0.4f,
-                    heightFrac = 0.16f,
+                    id = id, type = type, title = type.displayName(),
+                    xFrac = 0.1f, yFrac = 0.34f + stagger, widthFrac = 0.4f, heightFrac = 0.16f,
                 )
                 WidgetType.APP_DRAWER -> FloatingWidget(
-                    id = id,
-                    type = type,
-                    title = "App drawer",
-                    xFrac = 0.35f,
-                    yFrac = 0.52f + index * 0.04f,
-                    widthFrac = 0.28f,
-                    heightFrac = 0.12f,
+                    id = id, type = type, title = type.displayName(),
+                    xFrac = 0.35f, yFrac = 0.52f + stagger, widthFrac = 0.28f, heightFrac = 0.12f,
+                )
+                WidgetType.YOUTUBE -> FloatingWidget(
+                    id = id, type = type, title = type.displayName(),
+                    xFrac = 0.08f, yFrac = 0.28f + stagger, widthFrac = 0.5f, heightFrac = 0.14f,
+                )
+                WidgetType.POWERAMP -> FloatingWidget(
+                    id = id, type = type, title = type.displayName(),
+                    xFrac = 0.08f, yFrac = 0.44f + stagger, widthFrac = 0.55f, heightFrac = 0.15f,
+                )
+                WidgetType.TWITCH -> FloatingWidget(
+                    id = id, type = type, title = type.displayName(),
+                    xFrac = 0.12f, yFrac = 0.36f + stagger, widthFrac = 0.48f, heightFrac = 0.14f,
+                )
+                WidgetType.SPOTIFY -> FloatingWidget(
+                    id = id, type = type, title = type.displayName(),
+                    xFrac = 0.1f, yFrac = 0.4f + stagger, widthFrac = 0.52f, heightFrac = 0.15f,
+                )
+                WidgetType.SEARCH -> FloatingWidget(
+                    id = id, type = type, title = type.displayName(),
+                    xFrac = 0.1f, yFrac = 0.2f + stagger, widthFrac = 0.8f, heightFrac = 0.08f,
+                )
+                WidgetType.CALENDAR -> FloatingWidget(
+                    id = id, type = type, title = type.displayName(),
+                    xFrac = 0.55f, yFrac = 0.3f + stagger, widthFrac = 0.35f, heightFrac = 0.16f,
+                )
+                WidgetType.NOTES -> FloatingWidget(
+                    id = id, type = type, title = type.displayName(),
+                    xFrac = 0.55f, yFrac = 0.48f + stagger, widthFrac = 0.35f, heightFrac = 0.14f,
                 )
             }
         }
