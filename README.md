@@ -2,45 +2,46 @@
 
 A Nova-inspired Android home screen launcher built with Kotlin and Jetpack Compose.
 
-## Features
+## Features (Nova-style)
 
-- **Home screen** with clock, date, and a 4×5 app grid
-- **Dock** with five pinned app slots
-- **Swipe-up app drawer** with search
-- **Customize shortcuts** by tapping empty slots or long-pressing apps in the drawer
-- **Persistent layout** saved across restarts
+- **Desktop** — clock, configurable grid (3–6 columns / 4–7 rows), dock, folders
+- **App drawer** — swipe-up, search, vertical/horizontal scroll, custom groups/tabs
+- **Search micro-results** — calculator and unit conversions (e.g. `12*7`, `10 km to mi`)
+- **Icon theming** — circle / squircle / square / teardrop shapes, size & label controls
+- **Themes** — light / dark / system, accent colors, Material You toggle, wallpaper styles
+- **Gestures (Prime)** — swipe up/down, double-tap, pinch-in → drawer, search, settings, notifications
+- **Hide apps** — hide from drawer without uninstalling
+- **Folders** — stack apps on the home screen to create folders
+- **Backup & restore** — export/import full layout + settings as JSON
 
-## Install on your phone
+## Install
 
-Download the latest APK from the [Releases](https://github.com/ihy2ln/My-Launcher/releases) page, transfer it to your Android device, and open it to install. You may need to allow installs from unknown sources.
+Download the latest APK from the [Releases](https://github.com/ihy2ln/My-Launcher/releases) page.
 
-Or build from source:
+1. Install **HomeLauncher-v0.3.0.apk**
+2. Press **Home** → choose **Home Launcher** → **Always**
+
+### Build from source
 
 ```bash
-./gradlew assembleDebug
+./gradlew assembleRelease
 ```
 
-The APK is written to `app/build/outputs/apk/release/app-release.apk`. Transfer it to your phone and install, or run:
-
-```bash
-./gradlew installRelease
-```
-
-After installing, press the Home button and choose **Home Launcher** → **Always**.
+APK: `app/build/outputs/apk/release/app-release.apk`
 
 ## Usage
 
 | Action | Result |
 | --- | --- |
-| Swipe up from the home screen | Open the app drawer |
-| Swipe down in the app drawer | Close the drawer |
-| Tap an app | Launch it |
-| Tap an empty home or dock slot | Pick an app from the drawer |
-| Long-press an app in the drawer | Add it to home or dock |
-| Long-press a home or dock shortcut | Remove it |
+| Swipe up | App drawer (configurable) |
+| Swipe down | Search / notifications (configurable) |
+| Double-tap / pinch | Configurable gesture |
+| Long-press home | Open Nova Settings |
+| Tap empty slot | Place app |
+| Place app on another app | Create folder |
+| Long-press drawer app | Add / hide / group |
+| Settings → Backup | Save or restore your setup |
 
 ## Requirements
 
 - Android 8.0 (API 26) or newer
-- Kotlin 2.0+
-- Jetpack Compose

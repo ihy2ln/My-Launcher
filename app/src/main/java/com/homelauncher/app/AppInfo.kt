@@ -13,17 +13,21 @@ data class AppInfo(
     val packageName: String,
     val activityName: String,
     val icon: ImageBitmap,
-)
+) {
+    val key: String get() = "$packageName/$activityName"
+}
+
+fun appKey(packageName: String, activityName: String): String = "$packageName/$activityName"
 
 fun loadInstalledApps(context: Context): List<AppInfo> {
     val packageManager = context.packageManager
     val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
-
     val resolvedActivities = packageManager.queryIntentActivities(intent, PackageManager.MATCH_ALL)
 
     return resolvedActivities
         .map { resolveInfo ->
-            val icon = resolveInfo.loadIcon(packageManager).toBitmap().asImageBitmap()
+            val drawable = resolveInfo.loadIcon(packageManager)
+            val icon = drawable.toBitmap(width = 192, height = 192).asImageBitmap()
             AppInfo(
                 label = resolveInfo.loadLabel(packageManager).toString(),
                 packageName = resolveInfo.activityInfo.packageName,
@@ -31,8 +35,13 @@ fun loadInstalledApps(context: Context): List<AppInfo> {
                 icon = icon,
             )
         }
-        .distinctBy { it.packageName + it.activityName }
+        .distinctBy { it.key }
         .sortedBy { it.label.lowercase() }
+}
+
+fun findApp(apps: List<AppInfo>, key: String?): AppInfo? {
+    if (key.isNullOrBlank()) return null
+    return apps.firstOrNull { it.key == key }
 }
 
 fun launchApp(context: Context, app: AppInfo) {
@@ -42,4 +51,15 @@ fun launchApp(context: Context, app: AppInfo) {
         flags = Intent.FLAG_ACTIVITY_NEW_TASK
     }
     context.startActivity(intent)
+}
+
+fun expandNotifications(context: Context) {
+    try {
+        val statusBarService = context.getSystemService("statusbar")
+        val statusBarManager = Class.forName("android.app.StatusBarManager")
+        val method = statusBarManager.getMethod("expandNotificationsPanel")
+        method.invoke(statusBarService)
+    } catch (_: Exception) {
+        // Not available on all devices / without permission
+    }
 }
