@@ -320,8 +320,8 @@ fun HomeCell(
                     onDragCancel = onDragCancel,
                     labelOverride = appAliases[app.key],
                 )
-            } else if (showEmpty) {
-                EmptyModule(opacity, style, onEmpty)
+            } else {
+                HomeEmptyCell(showEmpty = showEmpty, opacity = opacity, style = style, onEmpty = onEmpty)
             }
         }
         is HomeSlot.Folder -> {
@@ -345,20 +345,30 @@ fun HomeCell(
                         onLongClick = onLongPress,
                     )
                 }
-            } else if (showEmpty) {
-                EmptyModule(opacity, style, onEmpty)
+            } else {
+                HomeEmptyCell(showEmpty = showEmpty, opacity = opacity, style = style, onEmpty = onEmpty)
             }
         }
         is HomeSlot.Widget -> {
-            // Legacy grid widgets are migrated to floating widgets; keep cell empty.
-            if (showEmpty) EmptyModule(opacity, style, onEmpty)
+            // Legacy grid widgets migrate to floating widgets.
+            HomeEmptyCell(showEmpty = showEmpty, opacity = opacity, style = style, onEmpty = onEmpty)
         }
-        null -> if (showEmpty) {
-            EmptyModule(opacity, style, onEmpty)
-        } else {
-            // Invisible spacer — keeps grid alignment without "+" clutter
-            Box(modifier = Modifier.height(76.dp).fillMaxWidth())
-        }
+        null -> HomeEmptyCell(showEmpty = showEmpty, opacity = opacity, style = style, onEmpty = onEmpty)
+    }
+}
+
+@Composable
+private fun HomeEmptyCell(
+    showEmpty: Boolean,
+    opacity: Float,
+    style: ModuleStyle?,
+    onEmpty: () -> Unit,
+) {
+    if (showEmpty) {
+        EmptyModule(opacity, style, onEmpty)
+    } else {
+        // Fully invisible — no plate, no "+", no module style chrome on the main home.
+        Box(modifier = Modifier.height(76.dp).fillMaxWidth())
     }
 }
 
@@ -480,13 +490,7 @@ fun DrawerHint(palette: LauncherPalette) {
             modifier = Modifier
                 .size(width = 40.dp, height = 4.dp)
                 .clip(RoundedCornerShape(2.dp))
-                .background(Color.White.copy(alpha = 0.45f)),
-        )
-        Spacer(modifier = Modifier.height(6.dp))
-        Text(
-            "Swipe up for apps",
-            color = palette.textSecondary,
-            fontSize = 11.sp,
+                .background(Color.White.copy(alpha = 0.35f)),
         )
     }
 }
