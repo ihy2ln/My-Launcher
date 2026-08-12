@@ -114,6 +114,33 @@ fun HomeWidgetView(
             modifier = modifier,
             showProgress = true,
         )
+        WidgetType.MUSIC -> MusicPlayerWidgetCard(
+            palette = palette,
+            app = app,
+            title = title ?: appLabel ?: "Music",
+            onClick = onClick,
+            onLongClick = onLongClick,
+            onDoubleClick = onDoubleClick,
+            modifier = modifier,
+        )
+        WidgetType.VIDEO -> VideoPlayerWidgetCard(
+            palette = palette,
+            app = app,
+            title = title ?: appLabel ?: "Video",
+            onClick = onClick,
+            onLongClick = onLongClick,
+            onDoubleClick = onDoubleClick,
+            modifier = modifier,
+        )
+        WidgetType.GAME -> GameWidgetCard(
+            palette = palette,
+            app = app,
+            title = title ?: appLabel ?: "Game",
+            onClick = onClick,
+            onLongClick = onLongClick,
+            onDoubleClick = onDoubleClick,
+            modifier = modifier,
+        )
         WidgetType.SEARCH -> SearchWidgetCard(palette, onClick, modifier, title, onLongClick, onDoubleClick)
         WidgetType.CALENDAR -> CalendarWidgetCard(palette, onClick, modifier, title, onLongClick, onDoubleClick)
         WidgetType.NOTES -> NotesWidgetCard(palette, onClick, modifier, title, onLongClick, onDoubleClick)
@@ -479,11 +506,193 @@ private fun NotesWidgetCard(
 }
 
 /** Catalog used by edit-home widget pickers. */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun MusicPlayerWidgetCard(
+    palette: LauncherPalette,
+    app: AppInfo?,
+    title: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    onLongClick: (() -> Unit)? = null,
+    onDoubleClick: (() -> Unit)? = null,
+) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .clip(RoundedCornerShape(18.dp))
+            .background(Color(0xFFE91E63).copy(alpha = 0.9f))
+            .widgetClickable(onClick, onLongClick, onDoubleClick)
+            .padding(12.dp),
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (app != null) {
+                androidx.compose.foundation.Image(
+                    bitmap = app.icon,
+                    contentDescription = title,
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(RoundedCornerShape(10.dp)),
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(Color.White.copy(0.2f)),
+                    contentAlignment = Alignment.Center,
+                ) { Text("♪", color = Color.White, fontSize = 18.sp) }
+            }
+            Spacer(modifier = Modifier.width(10.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(title, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text("Music · Now playing", color = Color.White.copy(0.85f), fontSize = 11.sp)
+            }
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("⏮", color = Color.White, fontSize = 14.sp)
+            Text("▶", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            Text("⏭", color = Color.White, fontSize = 14.sp)
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(3.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(Color.White.copy(0.3f)),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(0.45f)
+                        .height(3.dp)
+                        .background(Color.White),
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun VideoPlayerWidgetCard(
+    palette: LauncherPalette,
+    app: AppInfo?,
+    title: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    onLongClick: (() -> Unit)? = null,
+    onDoubleClick: (() -> Unit)? = null,
+) {
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .clip(RoundedCornerShape(16.dp))
+            .background(Color(0xFF1A237E))
+            .widgetClickable(onClick, onLongClick, onDoubleClick),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(0.35f)),
+        )
+        Column(
+            modifier = Modifier
+                .align(Alignment.Center)
+                .padding(10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(42.dp)
+                    .clip(CircleShape)
+                    .background(Color.White.copy(0.9f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text("▶", color = Color(0xFF1A237E), fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            }
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(title, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text("Video player", color = Color.White.copy(0.75f), fontSize = 10.sp)
+        }
+        if (app != null) {
+            androidx.compose.foundation.Image(
+                bitmap = app.icon,
+                contentDescription = null,
+                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(8.dp)
+                    .size(22.dp)
+                    .clip(RoundedCornerShape(6.dp)),
+            )
+        }
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .height(4.dp)
+                .background(Color.White.copy(0.25f)),
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(0.38f)
+                    .height(4.dp)
+                    .background(Color(0xFFFF5252)),
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun GameWidgetCard(
+    palette: LauncherPalette,
+    app: AppInfo?,
+    title: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    onLongClick: (() -> Unit)? = null,
+    onDoubleClick: (() -> Unit)? = null,
+) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .clip(RoundedCornerShape(16.dp))
+            .background(Color(0xFF00C853).copy(alpha = 0.88f))
+            .widgetClickable(onClick, onLongClick, onDoubleClick)
+            .padding(10.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        if (app != null) {
+            androidx.compose.foundation.Image(
+                bitmap = app.icon,
+                contentDescription = title,
+                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(RoundedCornerShape(10.dp)),
+            )
+        } else {
+            Text("🎮", color = Color.White, fontSize = 22.sp)
+        }
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(title, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text("Tap for controls", color = Color.White.copy(0.85f), fontSize = 10.sp)
+    }
+}
+
+/** Catalog used by edit-home widget pickers. */
 fun widgetCatalog(): List<Pair<WidgetType, String>> = listOf(
     WidgetType.BLANK to "App widget",
     WidgetType.CLOCK to "Clock",
     WidgetType.WEATHER to "Weather",
     WidgetType.APP_DRAWER to "App drawer",
+    WidgetType.MUSIC to "Music player",
+    WidgetType.VIDEO to "Video player",
+    WidgetType.GAME to "Game pad",
     WidgetType.YOUTUBE to "YouTube",
     WidgetType.POWERAMP to "Poweramp",
     WidgetType.TWITCH to "Twitch",

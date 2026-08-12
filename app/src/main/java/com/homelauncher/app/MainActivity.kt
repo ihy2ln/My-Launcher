@@ -67,7 +67,7 @@ import com.homelauncher.app.ui.drawer.AppDrawer
 import com.homelauncher.app.ui.home.EditHomeScreen
 import com.homelauncher.app.ui.home.HomeScreen
 import com.homelauncher.app.model.WidgetType
-import com.homelauncher.app.model.widgetTypeForPackage
+import com.homelauncher.app.model.resolveWidgetTheme
 import com.homelauncher.app.ui.home.AppPopoutOverlay
 import com.homelauncher.app.ui.search.GlobalSearchOverlay
 import com.homelauncher.app.ui.settings.SettingsScreen
@@ -131,7 +131,7 @@ fun HomeLauncherApp() {
     var groupDialog by remember { mutableStateOf(false) }
     var newGroupTitle by remember { mutableStateOf("") }
     var settingsSection by remember { mutableStateOf<String?>(null) }
-    var popoutApp by remember { mutableStateOf<AppInfo?>(null) }
+    var popoutTarget by remember { mutableStateOf<Pair<AppInfo, WidgetType?>?>(null) }
     var blankWidgetBindTarget by remember { mutableStateOf<String?>(null) }
 
     val apps by produceState(initialValue = emptyList<AppInfo>(), context) {
@@ -162,24 +162,34 @@ fun HomeLauncherApp() {
     }
 
     fun handleFloatingWidgetClick(widget: com.homelauncher.app.model.FloatingWidget) {
-        when (widget.effectiveType()) {
+        val boundApp = widget.appKey?.let { findApp(apps, it) }
+        when (val type = widget.effectiveType()) {
             WidgetType.APP_DRAWER -> overlay = Overlay.Drawer
             WidgetType.CLOCK, WidgetType.WEATHER -> Unit
             WidgetType.BLANK -> {
-                val app = widget.appKey?.let { findApp(apps, it) }
-                if (app != null) {
-                    if (widget.linkedType == null) {
-                        popoutApp = app
-                    } else {
-                        launchApp(context, app)
-                    }
+                if (boundApp != null) popoutTarget = boundApp to null
+            }
+            WidgetType.GAME -> {
+                if (boundApp != null) {
+                    popoutTarget = boundApp to WidgetType.GAME
                 }
             }
-            else -> launchPackageOrUrl(
-                context,
-                widget.effectiveType().launchPackages(),
-                widget.effectiveType().webFallback(),
-            )
+            WidgetType.MUSIC, WidgetType.VIDEO, WidgetType.POWERAMP, WidgetType.SPOTIFY,
+            WidgetType.YOUTUBE, WidgetType.TWITCH,
+            -> {
+                if (boundApp != null) {
+                    launchApp(context, boundApp)
+                } else {
+                    launchPackageOrUrl(context, type.launchPackages(), type.webFallback())
+                }
+            }
+            else -> {
+                if (boundApp != null) {
+                    launchApp(context, boundApp)
+                } else {
+                    launchPackageOrUrl(context, type.launchPackages(), type.webFallback())
+                }
+            }
         }
     }
 
@@ -243,6 +253,12 @@ fun HomeLauncherApp() {
                             returnToEditAfterPick = true
                             overlay = Overlay.Drawer
                         },
+                        onAddAppsToFolder = { folder ->
+                            folderAddTarget = folder
+                            multiSelectKeys = emptySet()
+                            returnToEditAfterPick = true
+                            overlay = Overlay.Drawer
+                        },
                         onOpenSettings = {
                             returnToEditAfterPick = true
                             overlay = Overlay.Settings
@@ -280,6 +296,7 @@ fun HomeLauncherApp() {
                         settings = settings,
                         palette = palette,
                         placementHint = when {
+                            blankWidgetBindTarget != null -> "Tap an app to bind to this widget"
                             folderAddTarget != null -> "Select apps for ${folderAddTarget!!.title}"
                             groupPickTarget != null -> "Select apps for ${groupPickTitle.ifBlank { "group" }}"
                             else -> placementTarget?.let { target ->
@@ -308,8 +325,13 @@ fun HomeLauncherApp() {
                                         val updated = folder.copy(appKeys = (folder.appKeys + keys).distinct())
                                         repository.updateFolder(updated)
                                         folderAddTarget = null
-                                        openFolder = updated
-                                        overlay = Overlay.None
+                                        if (returnToEditAfterPick) {
+                                            returnToEditAfterPick = false
+                                            overlay = Overlay.EditHome
+                                        } else {
+                                            openFolder = updated
+                                            overlay = Overlay.None
+                                        }
                                     }
                                     groupPickTarget != null -> {
                                         val title = groupPickTitle.ifBlank { "Group" }
@@ -350,8 +372,31 @@ fun HomeLauncherApp() {
                             val bindWidgetId = blankWidgetBindTarget
                             if (bindWidgetId != null) {
                                 scope.launch {
-                                    val linked = widgetTypeForPackage(app.packageName)
-                                    repository.bindBlankWidget(bindWidgetId, app.key, linked)
+                                    val linked = resolveWidgetTheme(app.packageName, app.category)
+                                    val widget = layout.floatingWidgets.firstOrNull { it.id == bindWidgetId }
+                                    if (widget != null) {
+                                        repository.updateFloatingWidget(
+                                            widget.copy(
+                                                appKey = app.key,
+                                                linkedType = linked,
+                                                title = app.label,
+                                                widthFrac = when (linked) {
+                                                    WidgetType.VIDEO, WidgetType.YOUTUBE, WidgetType.TWITCH -> 0.58f
+                                                    WidgetType.MUSIC, WidgetType.SPOTIFY, WidgetType.POWERAMP -> 0.55f
+                                                    WidgetType.GAME -> 0.4f
+                                                    else -> widget.widthFrac
+                                                },
+                                                heightFrac = when (linked) {
+                                                    WidgetType.VIDEO, WidgetType.YOUTUBE -> 0.18f
+                                                    WidgetType.MUSIC, WidgetType.SPOTIFY, WidgetType.POWERAMP -> 0.16f
+                                                    WidgetType.GAME -> 0.16f
+                                                    else -> widget.heightFrac
+                                                },
+                                            ),
+                                        )
+                                    } else {
+                                        repository.bindBlankWidget(bindWidgetId, app.key, linked)
+                                    }
                                     blankWidgetBindTarget = null
                                     overlay = if (returnToEditAfterPick) {
                                         returnToEditAfterPick = false
@@ -443,17 +488,18 @@ fun HomeLauncherApp() {
             }
         }
 
-        popoutApp?.let { app ->
+        popoutTarget?.let { (app, theme) ->
             AppPopoutOverlay(
                 app = app,
                 label = layout.appAliases[app.key] ?: app.label,
                 settings = settings,
                 palette = palette,
+                theme = theme,
                 onOpen = {
-                    popoutApp = null
+                    popoutTarget = null
                     launchApp(context, app)
                 },
-                onDismiss = { popoutApp = null },
+                onDismiss = { popoutTarget = null },
             )
         }
 

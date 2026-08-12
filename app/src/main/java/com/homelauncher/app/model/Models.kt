@@ -34,6 +34,9 @@ enum class WidgetType {
     POWERAMP,
     TWITCH,
     SPOTIFY,
+    MUSIC,
+    VIDEO,
+    GAME,
     SEARCH,
     CALENDAR,
     NOTES,
@@ -48,6 +51,9 @@ fun WidgetType.displayName(): String = when (this) {
     WidgetType.POWERAMP -> "Poweramp"
     WidgetType.TWITCH -> "Twitch"
     WidgetType.SPOTIFY -> "Spotify"
+    WidgetType.MUSIC -> "Music player"
+    WidgetType.VIDEO -> "Video player"
+    WidgetType.GAME -> "Game"
     WidgetType.SEARCH -> "Search"
     WidgetType.CALENDAR -> "Calendar"
     WidgetType.NOTES -> "Notes"
@@ -62,6 +68,9 @@ fun WidgetType.brandColor(): Long = when (this) {
     WidgetType.POWERAMP -> 0xFFF5A623
     WidgetType.TWITCH -> 0xFF9146FF
     WidgetType.SPOTIFY -> 0xFF1DB954
+    WidgetType.MUSIC -> 0xFFE91E63
+    WidgetType.VIDEO -> 0xFF1A237E
+    WidgetType.GAME -> 0xFF00C853
     WidgetType.SEARCH -> 0xFF4285F4
     WidgetType.CALENDAR -> 0xFFEA4335
     WidgetType.NOTES -> 0xFFFFC107
@@ -73,6 +82,30 @@ fun WidgetType.launchPackages(): List<String> = when (this) {
     WidgetType.POWERAMP -> listOf("com.maxmpz.audioplayer", "com.maxmpz.audioplayer.unlock")
     WidgetType.TWITCH -> listOf("tv.twitch.android.app")
     WidgetType.SPOTIFY -> listOf("com.spotify.music")
+    WidgetType.MUSIC -> listOf(
+        "com.google.android.apps.youtube.music",
+        "com.spotify.music",
+        "com.apple.android.music",
+        "com.amazon.mp3",
+        "com.pandora.android",
+        "com.soundcloud.android",
+        "com.maxmpz.audioplayer",
+        "com.aspiro.tidal",
+        "deezer.android.app",
+        "com.sec.android.app.music",
+    )
+    WidgetType.VIDEO -> listOf(
+        "com.netflix.mediaclient",
+        "com.disney.disneyplus",
+        "com.hulu.plus",
+        "com.amazon.avod.thirdpartyclient",
+        "com.google.android.videos",
+        "com.vudu.android",
+        "com.plexapp.android",
+        "org.videolan.vlc",
+        "com.mxtech.videoplayer.ad",
+    )
+    WidgetType.GAME -> emptyList()
     WidgetType.SEARCH -> listOf("com.google.android.googlequicksearchbox", "com.android.chrome")
     WidgetType.CALENDAR -> listOf("com.google.android.calendar", "com.samsung.android.calendar")
     WidgetType.NOTES -> listOf("com.google.android.keep", "com.samsung.android.app.notes")
@@ -81,12 +114,24 @@ fun WidgetType.launchPackages(): List<String> = when (this) {
 }
 
 /** Maps an installed app package to a built-in launcher widget when available. */
-fun widgetTypeForPackage(packageName: String): WidgetType? =
-    WidgetType.entries.firstOrNull { type ->
-        type != WidgetType.BLANK &&
-            type != WidgetType.APP_DRAWER &&
-            type.launchPackages().any { packageName.equals(it, true) || packageName.startsWith("$it.") }
+fun widgetTypeForPackage(packageName: String): WidgetType? {
+    val specific = listOf(
+        WidgetType.YOUTUBE, WidgetType.POWERAMP, WidgetType.TWITCH, WidgetType.SPOTIFY,
+        WidgetType.SEARCH, WidgetType.CALENDAR, WidgetType.NOTES,
+    ).firstOrNull { type ->
+        type.launchPackages().any { packageName.equals(it, true) || packageName.startsWith("$it.") }
     }
+    if (specific != null) return specific
+    return listOf(WidgetType.MUSIC, WidgetType.VIDEO).firstOrNull { type ->
+        type.launchPackages().any { packageName.equals(it, true) || packageName.startsWith("$it.") }
+    }
+}
+
+/**
+ * Resolve the best widget theme for an app using package allowlists and [AppCategory] metadata.
+ */
+fun resolveWidgetTheme(packageName: String, category: AppCategory): WidgetType? =
+    widgetTypeForPackage(packageName) ?: category.toWidgetType()
 
 fun WidgetType.webFallback(): String? = when (this) {
     WidgetType.YOUTUBE -> "https://www.youtube.com"
@@ -216,6 +261,18 @@ data class FloatingWidget(
                 WidgetType.SPOTIFY -> FloatingWidget(
                     id = id, type = type, title = type.displayName(),
                     xFrac = 0.1f, yFrac = 0.4f + stagger, widthFrac = 0.52f, heightFrac = 0.15f,
+                )
+                WidgetType.MUSIC -> FloatingWidget(
+                    id = id, type = type, title = type.displayName(),
+                    xFrac = 0.08f, yFrac = 0.42f + stagger, widthFrac = 0.55f, heightFrac = 0.16f,
+                )
+                WidgetType.VIDEO -> FloatingWidget(
+                    id = id, type = type, title = type.displayName(),
+                    xFrac = 0.1f, yFrac = 0.3f + stagger, widthFrac = 0.58f, heightFrac = 0.18f,
+                )
+                WidgetType.GAME -> FloatingWidget(
+                    id = id, type = type, title = type.displayName(),
+                    xFrac = 0.2f, yFrac = 0.36f + stagger, widthFrac = 0.4f, heightFrac = 0.16f,
                 )
                 WidgetType.SEARCH -> FloatingWidget(
                     id = id, type = type, title = type.displayName(),

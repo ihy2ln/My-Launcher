@@ -95,6 +95,7 @@ fun EditHomeScreen(
     onDone: () -> Unit,
     onPickAppForSlot: (Int) -> Unit,
     onPickAppForBlankWidget: (String) -> Unit,
+    onAddAppsToFolder: (FolderInfo) -> Unit,
     onOpenSettings: () -> Unit,
     onOpenSearch: () -> Unit,
 ) {
@@ -557,12 +558,21 @@ fun EditHomeScreen(
     }
 
     addTargetIndex?.let { index ->
+        val slot = layout.homeSlots.getOrNull(index)
+        val existingFolder = (slot as? HomeSlot.Folder)?.let { layout.folders[it.folderId] }
         AddItemSheet(
             palette = palette,
+            isFolder = existingFolder != null,
             onDismiss = { addTargetIndex = null },
             onApp = {
                 addTargetIndex = null
                 onPickAppForSlot(index)
+            },
+            onAddAppsToFolder = {
+                existingFolder?.let {
+                    addTargetIndex = null
+                    onAddAppsToFolder(it)
+                }
             },
             onGroup = {
                 createGroupIndex = index
@@ -585,9 +595,10 @@ fun EditHomeScreen(
     moduleEditIndex?.let { index ->
         val style = layout.moduleStyles[index] ?: ModuleStyle(opacity = settings.moduleOpacity)
         val slot = layout.homeSlots[index]
+        val folder = (slot as? HomeSlot.Folder)?.let { layout.folders[it.folderId] }
         AlertDialog(
             onDismissRequest = { moduleEditIndex = null },
-            title = { Text("Item options") },
+            title = { Text(if (folder != null) "Folder options" else "Item options") },
             text = {
                 Column(
                     modifier = Modifier.verticalScroll(rememberScrollState()),
@@ -605,6 +616,12 @@ fun EditHomeScreen(
                         onValueChange = { moduleOpacityDraft = it },
                         valueRange = 0.15f..0.95f,
                     )
+                    if (folder != null) {
+                        TextButton(onClick = {
+                            moduleEditIndex = null
+                            onAddAppsToFolder(folder)
+                        }) { Text("Add apps to folder") }
+                    }
                     TextButton(onClick = { moduleEditIndex = null }) {
                         Text("Move: long-press and drag this icon")
                     }
@@ -621,9 +638,9 @@ fun EditHomeScreen(
                                 }
                             }
                             is HomeSlot.Folder -> {
-                                val folder = layout.folders[slot.folderId]
-                                if (folder != null) {
-                                    repository.updateFolder(folder.copy(title = renameModuleDraft.ifBlank { folder.title }))
+                                val live = layout.folders[slot.folderId]
+                                if (live != null) {
+                                    repository.updateFolder(live.copy(title = renameModuleDraft.ifBlank { live.title }))
                                 }
                             }
                             else -> Unit
@@ -716,19 +733,25 @@ fun EditHomeScreen(
             onDismissRequest = { createGroupIndex = null },
             title = { Text("New group") },
             text = {
-                androidx.compose.material3.TextField(
-                    value = groupTitle,
-                    onValueChange = { groupTitle = it },
-                    label = { Text("Group name") },
-                )
+                Column {
+                    Text("Create a folder, then pick apps to add.", fontSize = 13.sp)
+                    androidx.compose.material3.TextField(
+                        value = groupTitle,
+                        onValueChange = { groupTitle = it },
+                        label = { Text("Group name") },
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                }
             },
             confirmButton = {
                 TextButton(onClick = {
                     scope.launch {
-                        repository.createFolder(groupTitle.ifBlank { "Group" }, emptyList(), index)
+                        val title = groupTitle.ifBlank { "Group" }
+                        val folderId = repository.createFolder(title, emptyList(), index)
                         createGroupIndex = null
+                        onAddAppsToFolder(FolderInfo(folderId, title, emptyList()))
                     }
-                }) { Text("Create") }
+                }) { Text("Create & add apps") }
             },
             dismissButton = {
                 TextButton(onClick = { createGroupIndex = null }) { Text("Cancel") }
@@ -777,8 +800,10 @@ private fun EditToolbar(
 @Composable
 private fun AddItemSheet(
     palette: LauncherPalette,
+    isFolder: Boolean = false,
     onDismiss: () -> Unit,
     onApp: () -> Unit,
+    onAddAppsToFolder: () -> Unit = {},
     onGroup: () -> Unit,
     onRemove: () -> Unit,
     onStyle: () -> Unit,
@@ -795,14 +820,23 @@ private fun AddItemSheet(
                 .padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Text("Add to home", color = palette.textPrimary, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+            Text(
+                if (isFolder) "Folder" else "Add to home",
+                color = palette.textPrimary,
+                fontSize = 20.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
             Text(
                 "Widgets are added from the Widgets bar below.",
                 color = palette.textSecondary,
                 fontSize = 12.sp,
             )
-            ActionCard("App", "Pick an installed app", palette, onApp)
-            ActionCard("Group / folder", "Create an empty group", palette, onGroup)
+            if (isFolder) {
+                ActionCard("Add apps", "Pick apps to put in this folder", palette, onAddAppsToFolder)
+            } else {
+                ActionCard("App", "Pick an installed app", palette, onApp)
+                ActionCard("Group / folder", "Create a group, then add apps", palette, onGroup)
+            }
             ActionCard("Module style", "Opacity, picture, video, rename", palette, onStyle)
             ActionCard("Remove", "Clear this cell", palette, onRemove)
             Spacer(modifier = Modifier.height(16.dp))

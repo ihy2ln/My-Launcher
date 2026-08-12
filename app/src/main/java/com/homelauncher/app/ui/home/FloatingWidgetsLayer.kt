@@ -117,7 +117,7 @@ fun FloatingWidgetsLayer(
                     palette = palette,
                     size = hDp,
                     title = displayLabel,
-                    app = if (widget.type == WidgetType.BLANK && widget.linkedType == null) boundApp else null,
+                    app = boundApp,
                     appLabel = displayLabel,
                     onClick = { if (!editable) onClick(widget) },
                     onDoubleClick = if (editable) {{ onDoubleTap(widget) }} else null,

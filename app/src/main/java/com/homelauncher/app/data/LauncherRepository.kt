@@ -91,14 +91,17 @@ class LauncherRepository(private val context: Context) {
         }
     }
 
-    suspend fun createFolder(title: String, appKeys: List<String>, homeIndex: Int) {
+    suspend fun createFolder(title: String, appKeys: List<String>, homeIndex: Int): String {
+        var createdId = ""
         mutateLayout { layout ->
             val id = "folder_${System.currentTimeMillis()}"
+            createdId = id
             val folder = FolderInfo(id, title, appKeys)
             val home = layout.homeSlots.toMutableList()
             if (homeIndex in home.indices) home[homeIndex] = HomeSlot.Folder(id)
             layout.copy(homeSlots = home, folders = layout.folders + (id to folder))
         }
+        return createdId
     }
 
     suspend fun updateFolder(folder: FolderInfo) {
@@ -591,9 +594,11 @@ class LauncherRepository(private val context: Context) {
                 List(array.length()) { i ->
                     val obj = array.getJSONObject(i)
                     val type = runCatching { WidgetType.valueOf(obj.getString("type")) }.getOrDefault(WidgetType.CLOCK)
-                    val linkedType = obj.optString("linkedType", null)?.let {
+                    val linkedRaw = if (obj.has("linkedType")) obj.optString("linkedType") else ""
+                    val linkedType = linkedRaw.takeIf { it.isNotBlank() }?.let {
                         runCatching { WidgetType.valueOf(it) }.getOrNull()
                     }
+                    val appKeyRaw = if (obj.has("appKey")) obj.optString("appKey") else ""
                     FloatingWidget(
                         id = obj.getString("id"),
                         type = type,
@@ -602,7 +607,7 @@ class LauncherRepository(private val context: Context) {
                         yFrac = obj.optDouble("yFrac", 0.22).toFloat(),
                         widthFrac = obj.optDouble("widthFrac", 0.42).toFloat(),
                         heightFrac = obj.optDouble("heightFrac", 0.16).toFloat(),
-                        appKey = obj.optString("appKey", null)?.takeIf { it.isNotBlank() },
+                        appKey = appKeyRaw.takeIf { it.isNotBlank() },
                         linkedType = linkedType,
                         opacity = obj.optDouble("opacity", 1.0).toFloat(),
                     )
