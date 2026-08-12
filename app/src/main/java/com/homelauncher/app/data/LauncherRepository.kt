@@ -192,6 +192,16 @@ class LauncherRepository(private val context: Context) {
         layout.copy(floatingWidgets = layout.floatingWidgets.filterNot { it.id == id })
     }
 
+    suspend fun bindBlankWidget(widgetId: String, appKey: String, linkedType: WidgetType?) = mutateLayout { layout ->
+        layout.copy(
+            floatingWidgets = layout.floatingWidgets.map { widget ->
+                if (widget.id == widgetId) {
+                    widget.copy(appKey = appKey, linkedType = linkedType)
+                } else widget
+            },
+        )
+    }
+
     suspend fun exportBackup(): String = buildBackupJson()
 
     private suspend fun buildBackupJson(): String {
@@ -566,6 +576,9 @@ class LauncherRepository(private val context: Context) {
                     put("yFrac", w.yFrac.toDouble())
                     put("widthFrac", w.widthFrac.toDouble())
                     put("heightFrac", w.heightFrac.toDouble())
+                    if (w.appKey != null) put("appKey", w.appKey)
+                    if (w.linkedType != null) put("linkedType", w.linkedType.name)
+                    put("opacity", w.opacity.toDouble())
                 })
             }
             return array.toString()
@@ -578,6 +591,9 @@ class LauncherRepository(private val context: Context) {
                 List(array.length()) { i ->
                     val obj = array.getJSONObject(i)
                     val type = runCatching { WidgetType.valueOf(obj.getString("type")) }.getOrDefault(WidgetType.CLOCK)
+                    val linkedType = obj.optString("linkedType", null)?.let {
+                        runCatching { WidgetType.valueOf(it) }.getOrNull()
+                    }
                     FloatingWidget(
                         id = obj.getString("id"),
                         type = type,
@@ -586,6 +602,9 @@ class LauncherRepository(private val context: Context) {
                         yFrac = obj.optDouble("yFrac", 0.22).toFloat(),
                         widthFrac = obj.optDouble("widthFrac", 0.42).toFloat(),
                         heightFrac = obj.optDouble("heightFrac", 0.16).toFloat(),
+                        appKey = obj.optString("appKey", null)?.takeIf { it.isNotBlank() },
+                        linkedType = linkedType,
+                        opacity = obj.optDouble("opacity", 1.0).toFloat(),
                     )
                 }
             } catch (_: Exception) {

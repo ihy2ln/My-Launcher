@@ -59,7 +59,27 @@ import com.homelauncher.app.ui.components.FolderIconView
 import com.homelauncher.app.ui.components.HomeWidgetView
 import com.homelauncher.app.ui.components.ModulePlate
 import com.homelauncher.app.ui.components.WallpaperBackdrop
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.zIndex
+import com.homelauncher.app.model.FloatingWidget
+import com.homelauncher.app.model.displayAppLabel
+import com.homelauncher.app.ui.search.LauncherSearchBar
 import com.homelauncher.app.ui.theme.LauncherPalette
+import com.homelauncher.app.ui.theme.iconShape
+import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 
 enum class AddItemType { APP, WIDGET, GROUP }
@@ -74,7 +94,9 @@ fun EditHomeScreen(
     repository: LauncherRepository,
     onDone: () -> Unit,
     onPickAppForSlot: (Int) -> Unit,
+    onPickAppForBlankWidget: (String) -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenSearch: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -82,11 +104,22 @@ fun EditHomeScreen(
     var showWallpaperSheet by remember { mutableStateOf(false) }
     var addTargetIndex by remember { mutableStateOf<Int?>(null) }
     var moduleEditIndex by remember { mutableStateOf<Int?>(null) }
+    var moduleStyleIndex by remember { mutableStateOf<Int?>(null) }
     var createGroupIndex by remember { mutableStateOf<Int?>(null) }
     var groupTitle by remember { mutableStateOf("Group") }
-    var editingWidgetId by remember { mutableStateOf<String?>(null) }
     var widgetTitleDraft by remember { mutableStateOf("") }
     var showWidgetPicker by remember { mutableStateOf(false) }
+    var editSearchQuery by remember { mutableStateOf("") }
+    var dragState by remember { mutableStateOf<HomeDragState?>(null) }
+    var hoverIndex by remember { mutableStateOf<Int?>(null) }
+    val cellBounds = remember { mutableStateMapOf<Int, Rect>() }
+    var widgetEditTarget by remember { mutableStateOf<FloatingWidget?>(null) }
+    var widgetOpacityDraft by remember { mutableStateOf(1f) }
+    var moduleOpacityDraft by remember { mutableStateOf(0.45f) }
+    var renameModuleDraft by remember { mutableStateOf("") }
+
+    fun hitTest(point: Offset): Int? =
+        cellBounds.entries.firstOrNull { (_, rect) -> rect.contains(point) }?.key
 
     val takePersistable = { uri: Uri ->
         runCatching {
@@ -119,7 +152,7 @@ fun EditHomeScreen(
         }
     }
     val pickModuleImage = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        val index = moduleEditIndex ?: return@rememberLauncherForActivityResult
+        val index = moduleStyleIndex ?: moduleEditIndex ?: return@rememberLauncherForActivityResult
         if (uri != null) {
             val path = takePersistable(uri)
             scope.launch {
@@ -129,7 +162,7 @@ fun EditHomeScreen(
         }
     }
     val pickModuleVideo = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        val index = moduleEditIndex ?: return@rememberLauncherForActivityResult
+        val index = moduleStyleIndex ?: moduleEditIndex ?: return@rememberLauncherForActivityResult
         if (uri != null) {
             val path = takePersistable(uri)
             scope.launch {
@@ -166,7 +199,7 @@ fun EditHomeScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 8.dp, bottom = 10.dp),
+                    .padding(top = 8.dp, bottom = 6.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -178,9 +211,16 @@ fun EditHomeScreen(
                     color = Color.White,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f),
                 )
-                Spacer(modifier = Modifier.size(64.dp))
             }
+            LauncherSearchBar(
+                query = editSearchQuery,
+                onQueryChange = { editSearchQuery = it },
+                onOpenSearch = onOpenSearch,
+                palette = palette,
+                modifier = Modifier.padding(bottom = 8.dp),
+            )
 
             // Zoomed panel chrome (Nova-style)
             Box(
@@ -204,11 +244,20 @@ fun EditHomeScreen(
                     }
 
                     Text(
-                        text = "Tap + for apps/groups · Widgets float freely — drag to move, corner to resize",
+                        text = "Tap + to add · Long-press drag to move · Double-tap for options",
                         color = Color.White.copy(0.75f),
                         fontSize = 12.sp,
                         modifier = Modifier.padding(top = 8.dp, bottom = 8.dp),
                     )
+
+                    if (dragState != null) {
+                        Text(
+                            "Drop on another cell to move or swap",
+                            color = palette.accent,
+                            fontSize = 12.sp,
+                            modifier = Modifier.padding(bottom = 6.dp),
+                        )
+                    }
 
                     Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                     LazyVerticalGrid(
@@ -220,37 +269,19 @@ fun EditHomeScreen(
                         userScrollEnabled = true,
                     ) {
                         items(layout.homeSlots.size) { index ->
-                            val style = layout.moduleStyles[index]
-                            val opacity = style?.opacity ?: settings.moduleOpacity
-                            when (val slot = layout.homeSlots[index]) {
-                                is HomeSlot.App -> {
-                                    val app = findApp(apps, slot.key)
-                                    ModulePlate(
-                                        opacity = opacity,
-                                        imageUri = style?.imageUri,
-                                        videoUri = style?.videoUri,
-                                        color = style?.color ?: 0xFF1A1A1A,
-                                        saturation = style?.saturation ?: 0.2f,
-                                        brightness = style?.brightness ?: 0.4f,
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .height(84.dp)
-                                            .clickable { addTargetIndex = index },
-                                    ) {
-                                        if (app != null) {
-                                            AppIconView(
-                                                app = app,
-                                                settings = settings,
-                                                palette = palette,
-                                                onClick = { addTargetIndex = index },
-                                                onLongClick = { moduleEditIndex = index },
-                                                size = settings.iconSizeDp.dp,
-                                            )
-                                        }
-                                    }
-                                }
-                                is HomeSlot.Folder -> {
-                                    val folder = layout.folders[slot.folderId]
+                            val isHoverTarget = hoverIndex == index && dragState != null && dragState?.fromIndex != index
+                            val slot = layout.homeSlots[index]
+                            Box(
+                                modifier = Modifier
+                                    .onGloballyPositioned { coords ->
+                                        cellBounds[index] = coords.boundsInRoot()
+                                    },
+                            ) {
+                                if (dragState?.fromIndex == index) {
+                                    Box(modifier = Modifier.height(84.dp).fillMaxWidth())
+                                } else {
+                                    val style = layout.moduleStyles[index]
+                                    val opacity = style?.opacity ?: settings.moduleOpacity
                                     ModulePlate(
                                         opacity = opacity,
                                         imageUri = style?.imageUri,
@@ -262,38 +293,62 @@ fun EditHomeScreen(
                                             .fillMaxWidth()
                                             .height(84.dp),
                                     ) {
-                                        if (folder != null) {
-                                            FolderIconView(
-                                                folder = folder,
-                                                previewApps = folder.appKeys.mapNotNull { findApp(apps, it) },
-                                                settings = settings,
-                                                palette = palette,
-                                                onClick = { addTargetIndex = index },
-                                                onLongClick = { moduleEditIndex = index },
-                                            )
-                                        }
-                                    }
-                                }
-                                is HomeSlot.Widget, null -> {
-                                    ModulePlate(
-                                        opacity = opacity,
-                                        imageUri = style?.imageUri,
-                                        videoUri = style?.videoUri,
-                                        color = style?.color ?: 0xFF1A1A1A,
-                                        saturation = style?.saturation ?: 0.2f,
-                                        brightness = style?.brightness ?: 0.4f,
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .height(84.dp)
-                                            .clickable { addTargetIndex = index },
-                                    ) {
-                                        Text(
-                                            text = "+",
-                                            color = Color.White.copy(alpha = 0.55f),
-                                            fontSize = 28.sp,
-                                            modifier = Modifier.clickable(
-                                                onClick = { addTargetIndex = index },
-                                            ),
+                                        HomeCell(
+                                            slot = slot,
+                                            style = style,
+                                            defaultOpacity = settings.moduleOpacity,
+                                            apps = apps,
+                                            folders = layout.folders,
+                                            settings = settings,
+                                            palette = palette,
+                                            showEmpty = true,
+                                            highlighted = isHoverTarget && slot is HomeSlot.Folder,
+                                            appAliases = layout.appAliases,
+                                            onLaunch = { addTargetIndex = index },
+                                            onOpenFolder = { addTargetIndex = index },
+                                            onWidgetClick = { },
+                                            onEmpty = { addTargetIndex = index },
+                                            onDoubleClick = {
+                                                moduleEditIndex = index
+                                                val currentStyle = layout.moduleStyles[index] ?: ModuleStyle(opacity = settings.moduleOpacity)
+                                                renameModuleDraft = currentStyle.title.orEmpty()
+                                                moduleOpacityDraft = currentStyle.opacity
+                                                when (slot) {
+                                                    is HomeSlot.App -> {
+                                                        val app = findApp(apps, slot.key)
+                                                        if (app != null) {
+                                                            renameModuleDraft = layout.appAliases[app.key] ?: app.label
+                                                        }
+                                                    }
+                                                    is HomeSlot.Folder -> {
+                                                        renameModuleDraft = layout.folders[slot.folderId]?.title.orEmpty()
+                                                    }
+                                                    else -> Unit
+                                                }
+                                            },
+                                            onDragStart = { pos ->
+                                                val appKey = (slot as? HomeSlot.App)?.key ?: return@HomeCell
+                                                val app = findApp(apps, appKey) ?: return@HomeCell
+                                                dragState = HomeDragState(index, app, pos)
+                                                hoverIndex = index
+                                            },
+                                            onDrag = { pos ->
+                                                dragState = dragState?.copy(position = pos)
+                                                hoverIndex = hitTest(pos)
+                                            },
+                                            onDragEnd = {
+                                                val target = hoverIndex
+                                                val from = dragState?.fromIndex
+                                                if (from != null && target != null && target != from) {
+                                                    scope.launch { repository.moveHomeSlot(from, target) }
+                                                }
+                                                dragState = null
+                                                hoverIndex = null
+                                            },
+                                            onDragCancel = {
+                                                dragState = null
+                                                hoverIndex = null
+                                            },
                                         )
                                     }
                                 }
@@ -303,12 +358,20 @@ fun EditHomeScreen(
 
                     FloatingWidgetsLayer(
                         widgets = layout.floatingWidgets,
+                        apps = apps,
+                        appAliases = layout.appAliases,
+                        settings = settings,
                         palette = palette,
                         editable = true,
-                        onClick = { /* keep selected via long-press rename */ },
-                        onLongPress = { widget ->
-                            editingWidgetId = widget.id
+                        onClick = { widget ->
+                            if (widget.type == WidgetType.BLANK && widget.appKey == null) {
+                                onPickAppForBlankWidget(widget.id)
+                            }
+                        },
+                        onDoubleTap = { widget ->
+                            widgetEditTarget = widget
                             widgetTitleDraft = widget.title
+                            widgetOpacityDraft = widget.opacity
                         },
                         onMove = { widget, x, y ->
                             scope.launch {
@@ -321,6 +384,24 @@ fun EditHomeScreen(
                             }
                         },
                     )
+
+                    dragState?.let { drag ->
+                        Image(
+                            bitmap = drag.app.icon,
+                            contentDescription = drag.app.label,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .offset {
+                                    IntOffset(
+                                        (drag.position.x - 36).roundToInt(),
+                                        (drag.position.y - 36).roundToInt(),
+                                    )
+                                }
+                                .size(72.dp)
+                                .clip(iconShape(settings.iconShape))
+                                .zIndex(20f),
+                        )
+                    }
                     } // end Box
                 }
             }
@@ -388,13 +469,30 @@ fun EditHomeScreen(
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
             containerColor = palette.drawerBackground,
         ) {
-            Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
                 Text("Add widget", color = palette.textPrimary, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
-                Text("Widgets float freely — drag to move, use the corner handle to resize.", color = palette.textSecondary, fontSize = 12.sp)
-                com.homelauncher.app.ui.components.widgetCatalog().forEach { (type, label) ->
-                    ActionCard(label, "Free-form size and position", palette) {
-                        scope.launch { repository.addFloatingWidget(type) }
-                        showWidgetPicker = false
+                Text(
+                    "Widgets float freely — long-press drag to move, corner handle to resize.",
+                    color = palette.textSecondary,
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(bottom = 10.dp),
+                )
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(420.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    items(com.homelauncher.app.ui.components.widgetCatalog()) { (type, label) ->
+                        ActionCard(label, "Free-form size and position", palette) {
+                            scope.launch {
+                                val id = repository.addFloatingWidget(type)
+                                showWidgetPicker = false
+                                if (type == WidgetType.BLANK) {
+                                    onPickAppForBlankWidget(id)
+                                }
+                            }
+                        }
                     }
                 }
                 Spacer(modifier = Modifier.height(16.dp))
@@ -402,46 +500,60 @@ fun EditHomeScreen(
         }
     }
 
-    editingWidgetId?.let { id ->
-        val widget = layout.floatingWidgets.firstOrNull { it.id == id }
-        if (widget == null) {
-            editingWidgetId = null
-        } else {
-            AlertDialog(
-                onDismissRequest = { editingWidgetId = null },
-                title = { Text("Widget") },
-                text = {
-                    Column {
-                        Text("Rename and manage this floating widget.")
-                        androidx.compose.material3.TextField(
-                            value = widgetTitleDraft,
-                            onValueChange = { widgetTitleDraft = it },
-                            label = { Text("Name") },
-                            modifier = Modifier.padding(top = 8.dp),
-                        )
+    widgetEditTarget?.let { widget ->
+        AlertDialog(
+            onDismissRequest = { widgetEditTarget = null },
+            title = { Text("Widget options") },
+            text = {
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text("Rename, opacity, move (long-press drag), or remove.")
+                    androidx.compose.material3.TextField(
+                        value = widgetTitleDraft,
+                        onValueChange = { widgetTitleDraft = it },
+                        label = { Text("Name") },
+                    )
+                    Text("Opacity")
+                    Slider(
+                        value = widgetOpacityDraft,
+                        onValueChange = { widgetOpacityDraft = it },
+                        valueRange = 0.15f..1f,
+                    )
+                    if (widget.type == WidgetType.BLANK) {
+                        TextButton(onClick = {
+                            widgetEditTarget = null
+                            onPickAppForBlankWidget(widget.id)
+                        }) { Text("Choose app") }
                     }
-                },
-                confirmButton = {
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    scope.launch {
+                        repository.updateFloatingWidget(
+                            widget.copy(
+                                title = widgetTitleDraft.ifBlank { widget.title },
+                                opacity = widgetOpacityDraft,
+                            ),
+                        )
+                        widgetEditTarget = null
+                    }
+                }) { Text("Save") }
+            },
+            dismissButton = {
+                Row {
                     TextButton(onClick = {
                         scope.launch {
-                            repository.updateFloatingWidget(widget.copy(title = widgetTitleDraft.ifBlank { widget.title }))
-                            editingWidgetId = null
+                            repository.removeFloatingWidget(widget.id)
+                            widgetEditTarget = null
                         }
-                    }) { Text("Save") }
-                },
-                dismissButton = {
-                    Row {
-                        TextButton(onClick = {
-                            scope.launch {
-                                repository.removeFloatingWidget(id)
-                                editingWidgetId = null
-                            }
-                        }) { Text("Remove") }
-                        TextButton(onClick = { editingWidgetId = null }) { Text("Cancel") }
-                    }
-                },
-            )
-        }
+                    }) { Text("Remove") }
+                    TextButton(onClick = { widgetEditTarget = null }) { Text("Cancel") }
+                }
+            },
+        )
     }
 
     addTargetIndex?.let { index ->
@@ -451,12 +563,6 @@ fun EditHomeScreen(
             onApp = {
                 addTargetIndex = null
                 onPickAppForSlot(index)
-            },
-            onWidget = { type ->
-                scope.launch {
-                    repository.addFloatingWidget(type)
-                    addTargetIndex = null
-                }
             },
             onGroup = {
                 createGroupIndex = index
@@ -470,7 +576,7 @@ fun EditHomeScreen(
                 }
             },
             onStyle = {
-                moduleEditIndex = index
+                moduleStyleIndex = index
                 addTargetIndex = null
             },
         )
@@ -478,22 +584,85 @@ fun EditHomeScreen(
 
     moduleEditIndex?.let { index ->
         val style = layout.moduleStyles[index] ?: ModuleStyle(opacity = settings.moduleOpacity)
+        val slot = layout.homeSlots[index]
         AlertDialog(
             onDismissRequest = { moduleEditIndex = null },
+            title = { Text("Item options") },
+            text = {
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text("Rename, opacity, long-press drag to move, or remove.")
+                    androidx.compose.material3.TextField(
+                        value = renameModuleDraft,
+                        onValueChange = { renameModuleDraft = it },
+                        label = { Text("Name") },
+                    )
+                    Text("Opacity")
+                    Slider(
+                        value = moduleOpacityDraft,
+                        onValueChange = { moduleOpacityDraft = it },
+                        valueRange = 0.15f..0.95f,
+                    )
+                    TextButton(onClick = { moduleEditIndex = null }) {
+                        Text("Move: long-press and drag this icon")
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    scope.launch {
+                        when (slot) {
+                            is HomeSlot.App -> {
+                                val app = findApp(apps, slot.key)
+                                if (app != null) {
+                                    repository.setAppAlias(app.key, renameModuleDraft.ifBlank { null })
+                                }
+                            }
+                            is HomeSlot.Folder -> {
+                                val folder = layout.folders[slot.folderId]
+                                if (folder != null) {
+                                    repository.updateFolder(folder.copy(title = renameModuleDraft.ifBlank { folder.title }))
+                                }
+                            }
+                            else -> Unit
+                        }
+                        repository.setModuleStyle(index, style.copy(opacity = moduleOpacityDraft, title = renameModuleDraft.ifBlank { null }))
+                        moduleEditIndex = null
+                    }
+                }) { Text("Save") }
+            },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = {
+                        scope.launch {
+                            repository.setHomeSlot(index, null)
+                            moduleEditIndex = null
+                        }
+                    }) { Text("Remove") }
+                    TextButton(onClick = {
+                        moduleStyleIndex = index
+                        moduleEditIndex = null
+                    }) { Text("Style") }
+                    TextButton(onClick = { moduleEditIndex = null }) { Text("Cancel") }
+                }
+            },
+        )
+    }
+
+    moduleStyleIndex?.let { index ->
+        val style = layout.moduleStyles[index] ?: ModuleStyle(opacity = settings.moduleOpacity)
+        AlertDialog(
+            onDismissRequest = { moduleStyleIndex = null },
             title = { Text("Module style") },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("Name this module", fontSize = 12.sp)
-                    androidx.compose.material3.TextField(
-                        value = style.title.orEmpty(),
-                        onValueChange = { value ->
-                            scope.launch {
-                                repository.setModuleStyle(index, style.copy(title = value.ifBlank { null }))
-                            }
-                        },
-                        label = { Text("Module name") },
-                    )
-                    Text("Color, saturation & brightness", fontSize = 12.sp)
+                Column(
+                    modifier = Modifier
+                        .verticalScroll(rememberScrollState())
+                        .height(360.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
                     ColorWheelPicker(
                         color = style.color,
                         onColorChange = { color ->
@@ -503,7 +672,7 @@ fun EditHomeScreen(
                         },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(220.dp),
+                            .height(180.dp),
                     )
                     Text("Saturation")
                     Slider(
@@ -525,16 +694,6 @@ fun EditHomeScreen(
                         },
                         valueRange = 0.1f..1f,
                     )
-                    Text("Opacity")
-                    Slider(
-                        value = style.opacity,
-                        onValueChange = { value ->
-                            scope.launch {
-                                repository.setModuleStyle(index, style.copy(opacity = value))
-                            }
-                        },
-                        valueRange = 0.15f..0.95f,
-                    )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         TextButton(onClick = { pickModuleImage.launch(arrayOf("image/*")) }) { Text("Picture") }
                         TextButton(onClick = { pickModuleVideo.launch(arrayOf("video/*")) }) { Text("Video") }
@@ -547,7 +706,7 @@ fun EditHomeScreen(
                 }
             },
             confirmButton = {
-                TextButton(onClick = { moduleEditIndex = null }) { Text("Done") }
+                TextButton(onClick = { moduleStyleIndex = null }) { Text("Done") }
             },
         )
     }
@@ -620,7 +779,6 @@ private fun AddItemSheet(
     palette: LauncherPalette,
     onDismiss: () -> Unit,
     onApp: () -> Unit,
-    onWidget: (WidgetType) -> Unit,
     onGroup: () -> Unit,
     onRemove: () -> Unit,
     onStyle: () -> Unit,
@@ -633,18 +791,21 @@ private fun AddItemSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
                 .padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Text("Add to home", color = palette.textPrimary, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+            Text(
+                "Widgets are added from the Widgets bar below.",
+                color = palette.textSecondary,
+                fontSize = 12.sp,
+            )
             ActionCard("App", "Pick an installed app", palette, onApp)
-            com.homelauncher.app.ui.components.widgetCatalog().forEach { (type, label) ->
-                ActionCard(label, "Free-form floating widget", palette) { onWidget(type) }
-            }
             ActionCard("Group / folder", "Create an empty group", palette, onGroup)
             ActionCard("Module style", "Opacity, picture, video, rename", palette, onStyle)
             ActionCard("Remove", "Clear this cell", palette, onRemove)
-            androidx.compose.foundation.layout.Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(16.dp))
         }
     }
 }

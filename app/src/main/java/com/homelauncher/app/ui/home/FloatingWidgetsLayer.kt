@@ -2,7 +2,8 @@ package com.homelauncher.app.ui.home
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
@@ -17,6 +18,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
@@ -26,8 +28,12 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
+import com.homelauncher.app.AppInfo
+import com.homelauncher.app.findApp
 import com.homelauncher.app.model.FloatingWidget
+import com.homelauncher.app.model.LauncherSettings
 import com.homelauncher.app.model.WidgetType
+import com.homelauncher.app.model.displayAppLabel
 import com.homelauncher.app.model.displayName
 import com.homelauncher.app.ui.components.HomeWidgetView
 import com.homelauncher.app.ui.theme.LauncherPalette
@@ -36,10 +42,13 @@ import kotlin.math.roundToInt
 @Composable
 fun FloatingWidgetsLayer(
     widgets: List<FloatingWidget>,
+    apps: List<AppInfo>,
+    appAliases: Map<String, String>,
+    settings: LauncherSettings,
     palette: LauncherPalette,
     editable: Boolean,
     onClick: (FloatingWidget) -> Unit,
-    onLongPress: (FloatingWidget) -> Unit,
+    onDoubleTap: (FloatingWidget) -> Unit = {},
     onMove: (FloatingWidget, xFrac: Float, yFrac: Float) -> Unit,
     onResize: (FloatingWidget, widthFrac: Float, heightFrac: Float) -> Unit,
 ) {
@@ -61,11 +70,19 @@ fun FloatingWidgetsLayer(
 
             val wDp = with(density) { widthPx.toDp() }
             val hDp = with(density) { heightPx.toDp() }
+            val boundApp = widget.appKey?.let { findApp(apps, it) }
+            val displayType = widget.effectiveType()
+            val displayLabel = when {
+                widget.title.isNotBlank() -> widget.title
+                boundApp != null -> displayAppLabel(boundApp.key, boundApp.label, appAliases)
+                else -> widget.type.displayName()
+            }
 
             Box(
                 modifier = Modifier
                     .offset { IntOffset(dragX.roundToInt(), dragY.roundToInt()) }
                     .size(wDp, hDp)
+                    .alpha(widget.opacity.coerceIn(0.15f, 1f))
                     .then(
                         if (editable) {
                             Modifier.border(1.dp, palette.accent.copy(0.7f), RoundedCornerShape(16.dp))
@@ -73,31 +90,48 @@ fun FloatingWidgetsLayer(
                             Modifier
                         },
                     )
-                    .pointerInput(editable, widget.id) {
-                        if (!editable) return@pointerInput
-                        detectDragGestures(
-                            onDragEnd = {
-                                onMove(
-                                    widget,
-                                    (dragX / parentW).coerceIn(0f, 0.92f),
-                                    (dragY / parentH).coerceIn(0f, 0.92f),
-                                )
-                            },
-                        ) { change, dragAmount ->
-                            change.consume()
-                            dragX = (dragX + dragAmount.x).coerceIn(0f, parentW - widthPx)
-                            dragY = (dragY + dragAmount.y).coerceIn(0f, parentH - heightPx)
-                        }
-                    },
+                    .then(
+                        if (editable) {
+                            Modifier.pointerInput(widget.id) {
+                                detectDragGesturesAfterLongPress(
+                                    onDragEnd = {
+                                        onMove(
+                                            widget,
+                                            (dragX / parentW).coerceIn(0f, 0.92f),
+                                            (dragY / parentH).coerceIn(0f, 0.92f),
+                                        )
+                                    },
+                                ) { change, dragAmount ->
+                                    change.consume()
+                                    dragX = (dragX + dragAmount.x).coerceIn(0f, parentW - widthPx)
+                                    dragY = (dragY + dragAmount.y).coerceIn(0f, parentH - heightPx)
+                                }
+                            }
+                        } else {
+                            Modifier
+                        },
+                    ),
             ) {
                 HomeWidgetView(
-                    type = widget.type,
+                    type = if (widget.type == WidgetType.BLANK && widget.appKey == null) WidgetType.BLANK else displayType,
                     palette = palette,
                     size = hDp,
-                    title = widget.title.ifBlank { widget.type.displayName() },
-                    onClick = { onClick(widget) },
-                    onLongClick = { onLongPress(widget) },
-                    modifier = Modifier.fillMaxSize(),
+                    title = displayLabel,
+                    app = if (widget.type == WidgetType.BLANK && widget.linkedType == null) boundApp else null,
+                    appLabel = displayLabel,
+                    onClick = { if (!editable) onClick(widget) },
+                    onDoubleClick = if (editable) {{ onDoubleTap(widget) }} else null,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .then(
+                            if (editable) {
+                                Modifier.pointerInput(widget.id) {
+                                    detectTapGestures(onTap = { /* drag layer handles move */ })
+                                }
+                            } else {
+                                Modifier
+                            },
+                        ),
                 )
 
                 if (editable) {
@@ -108,7 +142,7 @@ fun FloatingWidgetsLayer(
                             .clip(RoundedCornerShape(topStart = 8.dp))
                             .background(palette.accent)
                             .pointerInput(widget.id) {
-                                detectDragGestures(
+                                detectDragGesturesAfterLongPress(
                                     onDragEnd = {
                                         onResize(
                                             widget,

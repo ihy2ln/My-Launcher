@@ -66,6 +66,10 @@ import com.homelauncher.app.ui.components.openUninstall
 import com.homelauncher.app.ui.drawer.AppDrawer
 import com.homelauncher.app.ui.home.EditHomeScreen
 import com.homelauncher.app.ui.home.HomeScreen
+import com.homelauncher.app.model.WidgetType
+import com.homelauncher.app.model.widgetTypeForPackage
+import com.homelauncher.app.ui.home.AppPopoutOverlay
+import com.homelauncher.app.ui.search.GlobalSearchOverlay
 import com.homelauncher.app.ui.settings.SettingsScreen
 import com.homelauncher.app.ui.theme.HomeLauncherTheme
 import com.homelauncher.app.ui.theme.rememberPalette
@@ -89,7 +93,7 @@ private sealed interface PlacementTarget {
 private sealed interface Overlay {
     data object None : Overlay
     data object Drawer : Overlay
-    data object SearchDrawer : Overlay
+    data object GlobalSearch : Overlay
     data object Settings : Overlay
     data object EditHome : Overlay
 }
@@ -126,12 +130,16 @@ fun HomeLauncherApp() {
     var folderTitle by remember { mutableStateOf("Folder") }
     var groupDialog by remember { mutableStateOf(false) }
     var newGroupTitle by remember { mutableStateOf("") }
+    var settingsSection by remember { mutableStateOf<String?>(null) }
+    var popoutApp by remember { mutableStateOf<AppInfo?>(null) }
+    var blankWidgetBindTarget by remember { mutableStateOf<String?>(null) }
 
     val apps by produceState(initialValue = emptyList<AppInfo>(), context) {
         value = withContext(Dispatchers.Default) { loadInstalledApps(context) }
     }
 
     fun runGesture(action: GestureAction) {
+        if (overlay != Overlay.None && overlay != Overlay.EditHome) return
         when (action) {
             GestureAction.NONE -> Unit
             GestureAction.OPEN_DRAWER -> {
@@ -140,11 +148,38 @@ fun HomeLauncherApp() {
             }
             GestureAction.OPEN_SEARCH -> {
                 placementTarget = null
-                overlay = Overlay.SearchDrawer
+                overlay = Overlay.GlobalSearch
             }
             GestureAction.OPEN_SETTINGS -> overlay = Overlay.Settings
             GestureAction.EXPAND_NOTIFICATIONS -> expandNotifications(context)
             GestureAction.EDIT_HOME -> overlay = Overlay.EditHome
+        }
+    }
+
+    fun openSearch() {
+        placementTarget = null
+        overlay = Overlay.GlobalSearch
+    }
+
+    fun handleFloatingWidgetClick(widget: com.homelauncher.app.model.FloatingWidget) {
+        when (widget.effectiveType()) {
+            WidgetType.APP_DRAWER -> overlay = Overlay.Drawer
+            WidgetType.CLOCK, WidgetType.WEATHER -> Unit
+            WidgetType.BLANK -> {
+                val app = widget.appKey?.let { findApp(apps, it) }
+                if (app != null) {
+                    if (widget.linkedType == null) {
+                        popoutApp = app
+                    } else {
+                        launchApp(context, app)
+                    }
+                }
+            }
+            else -> launchPackageOrUrl(
+                context,
+                widget.effectiveType().launchPackages(),
+                widget.effectiveType().webFallback(),
+            )
         }
     }
 
@@ -176,35 +211,9 @@ fun HomeLauncherApp() {
                         placementTarget = PlacementTarget.Dock(index)
                         overlay = Overlay.Drawer
                     },
-                    onLongPressHome = { index ->
-                        when (val slot = layout.homeSlots.getOrNull(index)) {
-                            is HomeSlot.App -> {
-                                val app = findApp(apps, slot.key)
-                                if (app != null) appActionTarget = index to app
-                                else removeTarget = PlacementTarget.Home(index)
-                            }
-                            else -> removeTarget = PlacementTarget.Home(index)
-                        }
-                    },
-                    onLongPressDock = { removeTarget = PlacementTarget.Dock(it) },
                     onEditHome = { overlay = Overlay.EditHome },
-                    onDropApp = { from, to ->
-                        scope.launch { repository.moveHomeSlot(from, to) }
-                    },
-                    onFloatingWidgetClick = { widget ->
-                        when (widget.type) {
-                            com.homelauncher.app.model.WidgetType.APP_DRAWER -> overlay = Overlay.Drawer
-                            com.homelauncher.app.model.WidgetType.CLOCK,
-                            com.homelauncher.app.model.WidgetType.WEATHER -> Unit
-                            else -> {
-                                launchPackageOrUrl(
-                                    context,
-                                    widget.type.launchPackages(),
-                                    widget.type.webFallback(),
-                                )
-                            }
-                        }
-                    },
+                    onOpenSearch = ::openSearch,
+                    onFloatingWidgetClick = ::handleFloatingWidgetClick,
                     onFloatingWidgetMove = { widget, x, y ->
                         scope.launch { repository.updateFloatingWidget(widget.copy(xFrac = x, yFrac = y)) }
                     },
@@ -229,15 +238,38 @@ fun HomeLauncherApp() {
                             returnToEditAfterPick = true
                             overlay = Overlay.Drawer
                         },
+                        onPickAppForBlankWidget = { widgetId ->
+                            blankWidgetBindTarget = widgetId
+                            returnToEditAfterPick = true
+                            overlay = Overlay.Drawer
+                        },
                         onOpenSettings = {
                             returnToEditAfterPick = true
                             overlay = Overlay.Settings
                         },
+                        onOpenSearch = ::openSearch,
                     )
                 }
 
+                GlobalSearchOverlay(
+                    visible = overlay == Overlay.GlobalSearch,
+                    apps = apps,
+                    hiddenApps = layout.hiddenApps,
+                    palette = palette,
+                    onLaunchApp = { launchApp(context, it) },
+                    onOpenSettingsSection = { sectionId ->
+                        settingsSection = sectionId
+                        overlay = Overlay.Settings
+                    },
+                    onAddWidget = { type ->
+                        scope.launch { repository.addFloatingWidget(type) }
+                        overlay = Overlay.EditHome
+                    },
+                    onClose = { overlay = Overlay.None },
+                )
+
                 AnimatedVisibility(
-                    visible = overlay == Overlay.Drawer || overlay == Overlay.SearchDrawer,
+                    visible = overlay == Overlay.Drawer,
                     enter = slideInVertically { it },
                     exit = slideOutVertically { it },
                 ) {
@@ -315,6 +347,20 @@ fun HomeLauncherApp() {
                                     multiSelectKeys + app.key
                                 }
                             } else {
+                            val bindWidgetId = blankWidgetBindTarget
+                            if (bindWidgetId != null) {
+                                scope.launch {
+                                    val linked = widgetTypeForPackage(app.packageName)
+                                    repository.bindBlankWidget(bindWidgetId, app.key, linked)
+                                    blankWidgetBindTarget = null
+                                    overlay = if (returnToEditAfterPick) {
+                                        returnToEditAfterPick = false
+                                        Overlay.EditHome
+                                    } else {
+                                        Overlay.None
+                                    }
+                                }
+                            } else {
                             val target = placementTarget
                             if (target == null) {
                                 overlay = Overlay.None
@@ -345,6 +391,7 @@ fun HomeLauncherApp() {
                                 }
                             }
                             }
+                            }
                         },
                         onLongPress = { appMenuTarget = it },
                         onDismissPlacement = {
@@ -352,6 +399,7 @@ fun HomeLauncherApp() {
                             folderAddTarget = null
                             groupPickTarget = null
                             groupDialog = false
+                            blankWidgetBindTarget = null
                             multiSelectKeys = emptySet()
                             if (returnToEditAfterPick) {
                                 returnToEditAfterPick = false
@@ -362,6 +410,7 @@ fun HomeLauncherApp() {
                             placementTarget = null
                             folderAddTarget = null
                             groupPickTarget = null
+                            blankWidgetBindTarget = null
                             multiSelectKeys = emptySet()
                             overlay = if (returnToEditAfterPick) {
                                 returnToEditAfterPick = false
@@ -378,7 +427,10 @@ fun HomeLauncherApp() {
                         settings = settings,
                         palette = palette,
                         repository = repository,
+                        initialSection = settingsSection,
+                        onOpenSearch = ::openSearch,
                         onBack = {
+                            settingsSection = null
                             overlay = if (returnToEditAfterPick) {
                                 returnToEditAfterPick = false
                                 Overlay.EditHome
@@ -389,6 +441,20 @@ fun HomeLauncherApp() {
                     )
                 }
             }
+        }
+
+        popoutApp?.let { app ->
+            AppPopoutOverlay(
+                app = app,
+                label = layout.appAliases[app.key] ?: app.label,
+                settings = settings,
+                palette = palette,
+                onOpen = {
+                    popoutApp = null
+                    launchApp(context, app)
+                },
+                onDismiss = { popoutApp = null },
+            )
         }
 
         BackHandler(enabled = overlay != Overlay.None || openFolder != null) {

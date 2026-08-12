@@ -1,6 +1,7 @@
 package com.homelauncher.app.ui.components
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -23,6 +24,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -33,6 +35,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.homelauncher.app.AppInfo
 import com.homelauncher.app.model.WidgetType
 import com.homelauncher.app.model.brandColor
 import com.homelauncher.app.model.displayName
@@ -53,11 +56,23 @@ fun HomeWidgetView(
     modifier: Modifier = Modifier,
     title: String? = null,
     onLongClick: (() -> Unit)? = null,
+    onDoubleClick: (() -> Unit)? = null,
+    app: AppInfo? = null,
+    appLabel: String? = null,
 ) {
     when (type) {
-        WidgetType.CLOCK -> ClockWidgetCard(palette, onClick, modifier, title, onLongClick)
-        WidgetType.WEATHER -> WeatherWidgetCard(palette, onClick, modifier, title, onLongClick)
-        WidgetType.APP_DRAWER -> AppDrawerWidgetCard(palette, onClick, modifier, title, onLongClick)
+        WidgetType.BLANK -> BlankAppWidgetCard(
+            palette = palette,
+            app = app,
+            label = appLabel ?: title ?: "App widget",
+            onClick = onClick,
+            onLongClick = onLongClick,
+            onDoubleClick = onDoubleClick,
+            modifier = modifier,
+        )
+        WidgetType.CLOCK -> ClockWidgetCard(palette, onClick, modifier, title, onLongClick, onDoubleClick)
+        WidgetType.WEATHER -> WeatherWidgetCard(palette, onClick, modifier, title, onLongClick, onDoubleClick)
+        WidgetType.APP_DRAWER -> AppDrawerWidgetCard(palette, onClick, modifier, title, onLongClick, onDoubleClick)
         WidgetType.YOUTUBE -> MediaWidgetCard(
             brand = Color(0xFFFF0000),
             glyph = "▶",
@@ -99,10 +114,86 @@ fun HomeWidgetView(
             modifier = modifier,
             showProgress = true,
         )
-        WidgetType.SEARCH -> SearchWidgetCard(palette, onClick, modifier, title, onLongClick)
-        WidgetType.CALENDAR -> CalendarWidgetCard(palette, onClick, modifier, title, onLongClick)
-        WidgetType.NOTES -> NotesWidgetCard(palette, onClick, modifier, title, onLongClick)
+        WidgetType.SEARCH -> SearchWidgetCard(palette, onClick, modifier, title, onLongClick, onDoubleClick)
+        WidgetType.CALENDAR -> CalendarWidgetCard(palette, onClick, modifier, title, onLongClick, onDoubleClick)
+        WidgetType.NOTES -> NotesWidgetCard(palette, onClick, modifier, title, onLongClick, onDoubleClick)
     }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun BlankAppWidgetCard(
+    palette: LauncherPalette,
+    app: AppInfo?,
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    onLongClick: (() -> Unit)? = null,
+    onDoubleClick: (() -> Unit)? = null,
+) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .clip(RoundedCornerShape(16.dp))
+            .background(palette.surface.copy(alpha = 0.6f))
+            .then(
+                if (onDoubleClick != null) {
+                    Modifier.pointerInput(Unit) {
+                        detectTapGestures(
+                            onTap = { onClick() },
+                            onDoubleTap = { onDoubleClick() },
+                            onLongPress = { onLongClick?.invoke() },
+                        )
+                    }
+                } else {
+                    Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick)
+                },
+            )
+            .padding(10.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        if (app != null) {
+            androidx.compose.foundation.Image(
+                bitmap = app.icon,
+                contentDescription = label,
+                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape),
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                label,
+                color = palette.textPrimary,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text("Tap to open", color = palette.textSecondary, fontSize = 10.sp)
+        } else {
+            Text("+", color = palette.textSecondary, fontSize = 28.sp)
+            Text("Choose app", color = palette.textSecondary, fontSize = 11.sp)
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+private fun Modifier.widgetClickable(
+    onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
+    onDoubleClick: (() -> Unit)? = null,
+): Modifier = if (onDoubleClick != null) {
+    pointerInput(onClick, onLongClick, onDoubleClick) {
+        detectTapGestures(
+            onTap = { onClick() },
+            onDoubleTap = { onDoubleClick() },
+            onLongPress = { onLongClick?.invoke() },
+        )
+    }
+} else {
+    combinedClickable(onClick = onClick, onLongClick = onLongClick)
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -113,6 +204,7 @@ private fun ClockWidgetCard(
     modifier: Modifier = Modifier,
     title: String? = null,
     onLongClick: (() -> Unit)? = null,
+    onDoubleClick: (() -> Unit)? = null,
 ) {
     var now by remember { mutableStateOf(Date()) }
     LaunchedEffect(Unit) {
@@ -129,7 +221,7 @@ private fun ClockWidgetCard(
             .fillMaxSize()
             .clip(RoundedCornerShape(16.dp))
             .background(palette.surface.copy(alpha = 0.55f))
-            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+            .widgetClickable(onClick, onLongClick, onDoubleClick)
             .padding(10.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
@@ -161,6 +253,7 @@ private fun WeatherWidgetCard(
     modifier: Modifier = Modifier,
     title: String? = null,
     onLongClick: (() -> Unit)? = null,
+    onDoubleClick: (() -> Unit)? = null,
 ) {
     val temp = remember { 64 + Random.nextInt(0, 12) }
     val condition = remember {
@@ -172,7 +265,7 @@ private fun WeatherWidgetCard(
             .fillMaxSize()
             .clip(RoundedCornerShape(16.dp))
             .background(Color(0xFF4A90A4).copy(alpha = 0.55f))
-            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+            .widgetClickable(onClick, onLongClick, onDoubleClick)
             .padding(10.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
@@ -191,13 +284,14 @@ private fun AppDrawerWidgetCard(
     modifier: Modifier = Modifier,
     title: String? = null,
     onLongClick: (() -> Unit)? = null,
+    onDoubleClick: (() -> Unit)? = null,
 ) {
     Column(
         modifier = modifier
             .fillMaxSize()
             .clip(RoundedCornerShape(16.dp))
             .background(palette.accent.copy(alpha = 0.35f))
-            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+            .widgetClickable(onClick, onLongClick, onDoubleClick)
             .padding(8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
@@ -296,13 +390,14 @@ private fun SearchWidgetCard(
     modifier: Modifier = Modifier,
     title: String? = null,
     onLongClick: (() -> Unit)? = null,
+    onDoubleClick: (() -> Unit)? = null,
 ) {
     Row(
         modifier = modifier
             .fillMaxSize()
             .clip(RoundedCornerShape(24.dp))
             .background(Color.White.copy(alpha = 0.92f))
-            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+            .widgetClickable(onClick, onLongClick, onDoubleClick)
             .padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -326,6 +421,7 @@ private fun CalendarWidgetCard(
     modifier: Modifier = Modifier,
     title: String? = null,
     onLongClick: (() -> Unit)? = null,
+    onDoubleClick: (() -> Unit)? = null,
 ) {
     val cal = remember { Calendar.getInstance() }
     val day = cal.get(Calendar.DAY_OF_MONTH)
@@ -337,7 +433,7 @@ private fun CalendarWidgetCard(
             .fillMaxSize()
             .clip(RoundedCornerShape(16.dp))
             .background(Color.White.copy(alpha = 0.92f))
-            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
+            .widgetClickable(onClick, onLongClick, onDoubleClick),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(
@@ -365,13 +461,14 @@ private fun NotesWidgetCard(
     modifier: Modifier = Modifier,
     title: String? = null,
     onLongClick: (() -> Unit)? = null,
+    onDoubleClick: (() -> Unit)? = null,
 ) {
     Column(
         modifier = modifier
             .fillMaxSize()
             .clip(RoundedCornerShape(16.dp))
             .background(Color(0xFFFFF59D).copy(alpha = 0.95f))
-            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+            .widgetClickable(onClick, onLongClick, onDoubleClick)
             .padding(12.dp),
     ) {
         Text(title ?: "Notes", color = Color(0xFF5D4037), fontSize = 12.sp, fontWeight = FontWeight.Bold)
@@ -383,6 +480,7 @@ private fun NotesWidgetCard(
 
 /** Catalog used by edit-home widget pickers. */
 fun widgetCatalog(): List<Pair<WidgetType, String>> = listOf(
+    WidgetType.BLANK to "App widget",
     WidgetType.CLOCK to "Clock",
     WidgetType.WEATHER to "Weather",
     WidgetType.APP_DRAWER to "App drawer",

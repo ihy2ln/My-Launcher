@@ -7,6 +7,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -52,6 +53,7 @@ fun AppIconView(
     palette: LauncherPalette,
     onClick: () -> Unit,
     onLongClick: (() -> Unit)? = null,
+    onDoubleClick: (() -> Unit)? = null,
     onDragStart: ((Offset) -> Unit)? = null,
     onDrag: ((Offset) -> Unit)? = null,
     onDragEnd: (() -> Unit)? = null,
@@ -71,7 +73,7 @@ fun AppIconView(
             .onGloballyPositioned { originInRoot = it.boundsInRoot().topLeft }
             .then(
                 if (enableDrag) {
-                    Modifier.pointerInput(app.key, onLongClick, onDragStart, onDrag, onDragEnd) {
+                    Modifier.pointerInput(app.key, onDragStart, onDrag, onDragEnd) {
                         detectDragGesturesAfterLongPress(
                             onDragStart = { local ->
                                 dragDistance = 0f
@@ -83,10 +85,6 @@ fun AppIconView(
                                 onDrag?.invoke(originInRoot + change.position)
                             },
                             onDragEnd = {
-                                if (dragDistance < 24f) {
-                                    // Long-press without real movement → action menu
-                                    onLongClick?.invoke()
-                                }
                                 onDragEnd?.invoke()
                                 dragDistance = 0f
                             },
@@ -95,7 +93,20 @@ fun AppIconView(
                                 dragDistance = 0f
                             },
                         )
-                    }.clickable(onClick = onClick)
+                    }.pointerInput(app.key, onClick, onDoubleClick) {
+                        detectTapGestures(
+                            onTap = { onClick() },
+                            onDoubleTap = { onDoubleClick?.invoke() },
+                        )
+                    }
+                } else if (onDoubleClick != null) {
+                    Modifier.pointerInput(app.key, onClick, onLongClick, onDoubleClick) {
+                        detectTapGestures(
+                            onTap = { onClick() },
+                            onDoubleTap = { onDoubleClick() },
+                            onLongPress = { onLongClick?.invoke() },
+                        )
+                    }
                 } else {
                     Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick)
                 },
@@ -145,12 +156,25 @@ fun FolderIconView(
     palette: LauncherPalette,
     onClick: () -> Unit,
     onLongClick: (() -> Unit)? = null,
+    onDoubleClick: (() -> Unit)? = null,
     size: Dp = settings.iconSizeDp.dp,
 ) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
+            .then(
+                if (onDoubleClick != null) {
+                    Modifier.pointerInput(folder.id, onClick, onLongClick, onDoubleClick) {
+                        detectTapGestures(
+                            onTap = { onClick() },
+                            onDoubleTap = { onDoubleClick() },
+                            onLongPress = { onLongClick?.invoke() },
+                        )
+                    }
+                } else {
+                    Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick)
+                },
+            ),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(

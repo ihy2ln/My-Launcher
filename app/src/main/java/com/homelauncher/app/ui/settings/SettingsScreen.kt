@@ -75,9 +75,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-private enum class SettingsTab { SETTINGS, STYLE }
 private enum class SettingsSection {
-    HOME, DRAWER, FOLDERS, SEARCH, CARDS, LOOK, GESTURES, INTEGRATIONS, BADGES, BACKUP
+    HOME, DRAWER, FOLDERS, SEARCH, CARDS, STYLE, GESTURES, INTEGRATIONS, BADGES, BACKUP
 }
 
 @Composable
@@ -86,12 +85,31 @@ fun SettingsScreen(
     palette: LauncherPalette,
     repository: LauncherRepository,
     onBack: () -> Unit,
+    initialSection: String? = null,
+    onOpenSearch: () -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     var message by remember { mutableStateOf<String?>(null) }
-    var tab by remember { mutableStateOf(SettingsTab.SETTINGS) }
-    var section by remember { mutableStateOf<SettingsSection?>(null) }
+    var section by remember {
+        mutableStateOf(
+            initialSection?.let { id ->
+                when (id) {
+                    "home" -> SettingsSection.HOME
+                    "drawer" -> SettingsSection.DRAWER
+                    "folders" -> SettingsSection.FOLDERS
+                    "search" -> SettingsSection.SEARCH
+                    "cards" -> SettingsSection.CARDS
+                    "style", "look" -> SettingsSection.STYLE
+                    "gestures" -> SettingsSection.GESTURES
+                    "integrations" -> SettingsSection.INTEGRATIONS
+                    "badges" -> SettingsSection.BADGES
+                    "backup" -> SettingsSection.BACKUP
+                    else -> null
+                }
+            },
+        )
+    }
     var query by remember { mutableStateOf("") }
     var showScrollEffect by remember { mutableStateOf(false) }
     val layout by repository.layout.collectAsState(initial = com.homelauncher.app.model.defaultLayout(30, 6))
@@ -181,7 +199,7 @@ fun SettingsScreen(
         SettingsHubItem(SettingsSection.FOLDERS, "Folders", "Set window styles, background colors, and icon layout.", HubGlyph.Folder),
         SettingsHubItem(SettingsSection.SEARCH, "Search", "Search window and bar configuration.", HubGlyph.Search),
         SettingsHubItem(SettingsSection.CARDS, "Cards", "Add and edit cards for the app drawer.", HubGlyph.Cards),
-        SettingsHubItem(SettingsSection.LOOK, "Look & feel", "Icon preferences, popup menu, and wallpaper options.", HubGlyph.Palette),
+        SettingsHubItem(SettingsSection.STYLE, "Style", "Theme, accent, wallpaper, icons, and scroll effects.", HubGlyph.Palette),
         SettingsHubItem(SettingsSection.GESTURES, "Gestures & inputs", "Swipe, tap, and pinch gestures on the home screen.", HubGlyph.Gestures),
         SettingsHubItem(SettingsSection.INTEGRATIONS, "Integrations", "Connect other apps and community links.", HubGlyph.Puzzle),
         SettingsHubItem(SettingsSection.BADGES, "Notification badges", "Badge visibility preferences.", HubGlyph.Badge),
@@ -229,9 +247,6 @@ fun SettingsScreen(
                             }
                             SliderRow("Dock opacity", settings.dockBackgroundAlpha, 0.1f, 0.9f, palette) {
                                 update { s -> s.copy(dockBackgroundAlpha = it) }
-                            }
-                            ActionRow("Scroll effect", "${settings.scrollEffect.label()} selected", palette) {
-                                showScrollEffect = true
                             }
                         }
                         SettingsSection.DRAWER -> {
@@ -286,7 +301,7 @@ fun SettingsScreen(
                                 update { s -> s.copy(showDrawerCards = it) }
                             }
                         }
-                        SettingsSection.LOOK -> {
+                        SettingsSection.STYLE -> {
                             ChoiceRow(
                                 title = "Theme",
                                 options = listOf("System", "Light", "Dark"),
@@ -344,6 +359,9 @@ fun SettingsScreen(
                             SliderRow("Label size", settings.labelSizeSp.toFloat(), 10f, 16f, palette) {
                                 update { s -> s.copy(labelSizeSp = it.toInt()) }
                             }
+                            ActionRow("Scroll effect", settings.scrollEffect.label(), palette) {
+                                showScrollEffect = true
+                            }
                         }
                         SettingsSection.GESTURES -> {
                             GesturePicker("Swipe up", settings.swipeUp, palette) { update { s -> s.copy(swipeUp = it) } }
@@ -376,59 +394,6 @@ fun SettingsScreen(
                     Spacer(modifier = Modifier.height(24.dp))
                 }
             }
-            tab == SettingsTab.STYLE -> {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 16.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text("Style", color = palette.textPrimary, fontSize = 28.sp, fontWeight = FontWeight.Bold)
-                    TextButton(onClick = onBack) { Text("Done", color = Color(0xFF1A3A6B)) }
-                }
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .verticalScroll(rememberScrollState())
-                        .padding(horizontal = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Text("Quick look & feel", color = palette.textSecondary, fontSize = 13.sp)
-                    ChoiceRow(
-                        title = "Theme",
-                        options = listOf("System", "Light", "Dark"),
-                        selected = settings.themeMode.ordinal,
-                        palette = palette,
-                        onSelect = { index -> update { it.copy(themeMode = ThemeMode.entries[index]) } },
-                    )
-                    Text("Accent", color = palette.textSecondary, fontSize = 13.sp)
-                    ColorWheelPicker(
-                        color = settings.accentColor,
-                        onColorChange = { color -> update { it.copy(accentColor = color) } },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Text("Background", color = palette.textSecondary, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp))
-                    ColorWheelPicker(
-                        color = settings.wallpaperColor,
-                        onColorChange = { color ->
-                            update { it.copy(wallpaperMode = WallpaperMode.COLOR, wallpaperColor = color) }
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    ChoiceRow(
-                        title = "Icon shape",
-                        options = listOf("System", "Circle", "Squircle", "Square", "Teardrop"),
-                        selected = settings.iconShape.ordinal,
-                        palette = palette,
-                        onSelect = { index -> update { it.copy(iconShape = IconShape.entries[index]) } },
-                    )
-                    ActionRow("Scroll effect", settings.scrollEffect.label(), palette) {
-                        showScrollEffect = true
-                    }
-                    Spacer(modifier = Modifier.height(16.dp))
-                }
-            }
             else -> {
                 Row(
                     modifier = Modifier
@@ -445,7 +410,9 @@ fun SettingsScreen(
                     value = query,
                     onValueChange = { query = it },
                     palette = palette,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                    modifier = Modifier
+                        .padding(horizontal = 16.dp, vertical = 4.dp)
+                        .clickable { onOpenSearch() },
                 )
 
                 Column(
@@ -459,7 +426,7 @@ fun SettingsScreen(
                     }
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
-                        text = "Home Launcher · Nova-inspired · v0.9.2",
+                        text = "Home Launcher · Nova-inspired · v0.10.0",
                         color = palette.textSecondary,
                         fontSize = 12.sp,
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
@@ -467,15 +434,6 @@ fun SettingsScreen(
                 }
             }
         }
-
-        BottomSettingsTabs(
-            selected = tab,
-            palette = palette,
-            onSelect = {
-                tab = it
-                section = null
-            },
-        )
     }
 
     renameGroupId?.let { id ->
@@ -682,45 +640,6 @@ private fun HubIcon(glyph: HubGlyph, color: Color) {
             HubGlyph.Backup -> {
                 drawRoundRect(color, Offset(size.width * 0.28f, size.height * 0.2f), Size(size.width * 0.44f, size.height * 0.6f), CornerRadius(4f, 4f), style = stroke)
                 drawLine(color, Offset(size.width * 0.5f, size.height * 0.35f), Offset(size.width * 0.5f, size.height * 0.62f), 2.2f)
-            }
-        }
-    }
-}
-
-@Composable
-private fun BottomSettingsTabs(
-    selected: SettingsTab,
-    palette: LauncherPalette,
-    onSelect: (SettingsTab) -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(if (palette.isDark) Color(0xFF151A22) else Color(0xFFE8EEF7))
-            .padding(horizontal = 24.dp, vertical = 10.dp),
-        horizontalArrangement = Arrangement.SpaceEvenly,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        listOf(SettingsTab.SETTINGS to "Settings", SettingsTab.STYLE to "Style").forEach { (tab, label) ->
-            val active = selected == tab
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(18.dp))
-                    .background(if (active) Color(0xFF1A3A6B).copy(alpha = if (palette.isDark) 0.35f else 0.15f) else Color.Transparent)
-                    .clickable { onSelect(tab) }
-                    .padding(horizontal = 28.dp, vertical = 8.dp),
-            ) {
-                HubIcon(
-                    if (tab == SettingsTab.SETTINGS) HubGlyph.Backup else HubGlyph.Palette,
-                    if (active) Color(0xFF1A3A6B).takeIf { !palette.isDark } ?: palette.accent else palette.textSecondary,
-                )
-                Text(
-                    label,
-                    color = if (active) Color(0xFF1A3A6B).takeIf { !palette.isDark } ?: palette.accent else palette.textSecondary,
-                    fontSize = 12.sp,
-                    fontWeight = if (active) FontWeight.Bold else FontWeight.Normal,
-                )
             }
         }
     }

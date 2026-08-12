@@ -26,6 +26,7 @@ enum class GestureAction {
 }
 
 enum class WidgetType {
+    BLANK,
     CLOCK,
     WEATHER,
     APP_DRAWER,
@@ -39,6 +40,7 @@ enum class WidgetType {
 }
 
 fun WidgetType.displayName(): String = when (this) {
+    WidgetType.BLANK -> "App widget"
     WidgetType.CLOCK -> "Clock"
     WidgetType.WEATHER -> "Weather"
     WidgetType.APP_DRAWER -> "App drawer"
@@ -52,6 +54,7 @@ fun WidgetType.displayName(): String = when (this) {
 }
 
 fun WidgetType.brandColor(): Long = when (this) {
+    WidgetType.BLANK -> 0xFF455A64
     WidgetType.CLOCK -> 0xFF2A2A2E
     WidgetType.WEATHER -> 0xFF4A90A4
     WidgetType.APP_DRAWER -> 0xFF82B1FF
@@ -73,8 +76,17 @@ fun WidgetType.launchPackages(): List<String> = when (this) {
     WidgetType.SEARCH -> listOf("com.google.android.googlequicksearchbox", "com.android.chrome")
     WidgetType.CALENDAR -> listOf("com.google.android.calendar", "com.samsung.android.calendar")
     WidgetType.NOTES -> listOf("com.google.android.keep", "com.samsung.android.app.notes")
+    WidgetType.BLANK -> emptyList()
     else -> emptyList()
 }
+
+/** Maps an installed app package to a built-in launcher widget when available. */
+fun widgetTypeForPackage(packageName: String): WidgetType? =
+    WidgetType.entries.firstOrNull { type ->
+        type != WidgetType.BLANK &&
+            type != WidgetType.APP_DRAWER &&
+            type.launchPackages().any { packageName.equals(it, true) || packageName.startsWith("$it.") }
+    }
 
 fun WidgetType.webFallback(): String? = when (this) {
     WidgetType.YOUTUBE -> "https://www.youtube.com"
@@ -159,12 +171,24 @@ data class FloatingWidget(
     val yFrac: Float = 0.22f,
     val widthFrac: Float = 0.42f,
     val heightFrac: Float = 0.16f,
+    val appKey: String? = null,
+    val linkedType: WidgetType? = null,
+    val opacity: Float = 1f,
 ) {
+    fun effectiveType(): WidgetType = when {
+        type == WidgetType.BLANK && linkedType != null -> linkedType
+        else -> type
+    }
+
     companion object {
         fun defaultsFor(type: WidgetType, index: Int = 0): FloatingWidget {
             val id = "fw_${type.name.lowercase()}_${System.currentTimeMillis()}_$index"
             val stagger = (index % 5) * 0.03f
             return when (type) {
+                WidgetType.BLANK -> FloatingWidget(
+                    id = id, type = type, title = type.displayName(),
+                    xFrac = 0.1f, yFrac = 0.26f + stagger, widthFrac = 0.45f, heightFrac = 0.16f,
+                )
                 WidgetType.CLOCK -> FloatingWidget(
                     id = id, type = type, title = type.displayName(),
                     xFrac = 0.08f, yFrac = 0.18f + stagger, widthFrac = 0.55f, heightFrac = 0.14f,

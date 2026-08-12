@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -63,6 +64,7 @@ import com.homelauncher.app.ui.components.FolderIconView
 import com.homelauncher.app.ui.components.HomeWidgetView
 import com.homelauncher.app.ui.components.ModulePlate
 import com.homelauncher.app.ui.components.WallpaperBackdrop
+import com.homelauncher.app.ui.search.LauncherSearchBar
 import com.homelauncher.app.ui.theme.LauncherPalette
 import com.homelauncher.app.ui.theme.iconShape
 import java.text.SimpleDateFormat
@@ -88,22 +90,14 @@ fun HomeScreen(
     onWidgetClick: (WidgetType) -> Unit,
     onEmptyHomeSlot: (Int) -> Unit,
     onEmptyDockSlot: (Int) -> Unit,
-    onLongPressHome: (Int) -> Unit,
-    onLongPressDock: (Int) -> Unit,
     onEditHome: () -> Unit,
-    onDropApp: (fromIndex: Int, toIndex: Int) -> Unit,
+    onOpenSearch: () -> Unit,
     onFloatingWidgetClick: (com.homelauncher.app.model.FloatingWidget) -> Unit = {},
-    onFloatingWidgetLongPress: (com.homelauncher.app.model.FloatingWidget) -> Unit = {},
     onFloatingWidgetMove: (com.homelauncher.app.model.FloatingWidget, Float, Float) -> Unit = { _, _, _ -> },
     onFloatingWidgetResize: (com.homelauncher.app.model.FloatingWidget, Float, Float) -> Unit = { _, _, _ -> },
 ) {
     var cumulativeDragY by remember { mutableStateOf(0f) }
-    var dragState by remember { mutableStateOf<HomeDragState?>(null) }
-    var hoverIndex by remember { mutableStateOf<Int?>(null) }
-    val cellBounds = remember { mutableStateMapOf<Int, Rect>() }
-
-    fun hitTest(point: Offset): Int? =
-        cellBounds.entries.firstOrNull { (_, rect) -> rect.contains(point) }?.key
+    var homeSearchQuery by remember { mutableStateOf("") }
 
     Box(modifier = Modifier.fillMaxSize()) {
         WallpaperBackdrop(
@@ -116,21 +110,26 @@ fun HomeScreen(
             useGradient = settings.wallpaperMode == WallpaperMode.GRADIENT,
         )
 
-        // Background gestures only (behind interactive content)
+        // Background gestures on wallpaper areas
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .pointerInput(settings) {
-                    detectTapGestures(
-                        onDoubleTap = { onGesture(settings.doubleTap) },
-                        onLongPress = { onEditHome() },
-                    )
+                    detectTapGestures(onDoubleTap = { onGesture(settings.doubleTap) })
                 }
                 .pointerInput(settings) {
                     detectTransformGestures { _, _, zoom, _ ->
                         if (zoom < 0.92f) onGesture(settings.pinchIn)
                     }
-                }
+                },
+        )
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .padding(horizontal = 14.dp)
+                .zIndex(1f)
                 .pointerInput(settings) {
                     detectVerticalDragGestures(
                         onDragEnd = {
@@ -144,25 +143,34 @@ fun HomeScreen(
                         onVerticalDrag = { _, dragAmount -> cumulativeDragY += dragAmount },
                     )
                 },
-        )
-
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .statusBarsPadding()
-                .padding(horizontal = 14.dp)
-                .zIndex(1f),
         ) {
-            ClockWidget(palette = palette, modifier = Modifier.padding(top = 18.dp, bottom = 8.dp))
-
-            if (dragState != null) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp, bottom = 6.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                LauncherSearchBar(
+                    query = homeSearchQuery,
+                    onQueryChange = { homeSearchQuery = it },
+                    onOpenSearch = onOpenSearch,
+                    palette = palette,
+                    modifier = Modifier.weight(1f),
+                )
                 Text(
-                    text = "Drop on a folder to add · empty cell to move · another app to swap",
-                    color = palette.accent,
-                    fontSize = 12.sp,
-                    modifier = Modifier.padding(bottom = 8.dp),
+                    text = "⚙",
+                    color = palette.textPrimary,
+                    fontSize = 24.sp,
+                    modifier = Modifier
+                        .padding(start = 10.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable(onClick = onEditHome)
+                        .padding(6.dp),
                 )
             }
+
+            ClockWidget(palette = palette, modifier = Modifier.padding(bottom = 8.dp))
 
             BoxWithConstraints(modifier = Modifier.weight(1f)) {
                 LazyVerticalGrid(
@@ -174,75 +182,33 @@ fun HomeScreen(
                     userScrollEnabled = false,
                 ) {
                     items(layout.homeSlots.size) { index ->
-                        val isHoverTarget = hoverIndex == index && dragState != null && dragState?.fromIndex != index
                         val slot = layout.homeSlots[index]
-                        Box(
-                            modifier = Modifier
-                                .onGloballyPositioned { coords ->
-                                    cellBounds[index] = coords.boundsInRoot()
-                                }
-                                .then(
-                                    if (isHoverTarget) {
-                                        Modifier.border(2.dp, palette.accent, RoundedCornerShape(16.dp))
-                                    } else {
-                                        Modifier
-                                    },
-                                ),
-                        ) {
-                            if (dragState?.fromIndex == index) {
-                                Box(modifier = Modifier.height(76.dp).fillMaxWidth())
-                            } else {
-                                HomeCell(
-                                    slot = slot,
-                                    style = layout.moduleStyles[index],
-                                    defaultOpacity = settings.moduleOpacity,
-                                    apps = apps,
-                                    folders = layout.folders,
-                                    settings = settings,
-                                    palette = palette,
-                                    showEmpty = false,
-                                    highlighted = isHoverTarget && slot is HomeSlot.Folder,
-                                    appAliases = layout.appAliases,
-                                    onLaunch = onLaunch,
-                                    onOpenFolder = onOpenFolder,
-                                    onWidgetClick = onWidgetClick,
-                                    onEmpty = { onEditHome() },
-                                    onLongPress = { onLongPressHome(index) },
-                                    onDragStart = { pos ->
-                                        val appKey = (slot as? HomeSlot.App)?.key ?: return@HomeCell
-                                        val app = findApp(apps, appKey) ?: return@HomeCell
-                                        dragState = HomeDragState(index, app, pos)
-                                        hoverIndex = index
-                                    },
-                                    onDrag = { pos ->
-                                        dragState = dragState?.copy(position = pos)
-                                        hoverIndex = hitTest(pos)
-                                    },
-                                    onDragEnd = {
-                                        val target = hoverIndex
-                                        val from = dragState?.fromIndex
-                                        if (from != null && target != null && target != from) {
-                                            onDropApp(from, target)
-                                        }
-                                        dragState = null
-                                        hoverIndex = null
-                                    },
-                                    onDragCancel = {
-                                        dragState = null
-                                        hoverIndex = null
-                                    },
-                                )
-                            }
-                        }
+                        HomeCell(
+                            slot = slot,
+                            style = layout.moduleStyles[index],
+                            defaultOpacity = settings.moduleOpacity,
+                            apps = apps,
+                            folders = layout.folders,
+                            settings = settings,
+                            palette = palette,
+                            showEmpty = false,
+                            appAliases = layout.appAliases,
+                            onLaunch = onLaunch,
+                            onOpenFolder = onOpenFolder,
+                            onWidgetClick = onWidgetClick,
+                            onEmpty = { onEditHome() },
+                        )
                     }
                 }
 
                 FloatingWidgetsLayer(
                     widgets = layout.floatingWidgets,
+                    apps = apps,
+                    appAliases = layout.appAliases,
+                    settings = settings,
                     palette = palette,
                     editable = false,
                     onClick = onFloatingWidgetClick,
-                    onLongPress = onFloatingWidgetLongPress,
                     onMove = onFloatingWidgetMove,
                     onResize = onFloatingWidgetResize,
                 )
@@ -255,28 +221,9 @@ fun HomeScreen(
                 palette = palette,
                 onLaunch = onLaunch,
                 onEmptySlot = onEmptyDockSlot,
-                onLongPress = onLongPressDock,
             )
 
             DrawerHint(palette)
-        }
-
-        dragState?.let { drag ->
-            Image(
-                bitmap = drag.app.icon,
-                contentDescription = drag.app.label,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier
-                    .offset {
-                        IntOffset(
-                            (drag.position.x - 36).roundToInt(),
-                            (drag.position.y - 36).roundToInt(),
-                        )
-                    }
-                    .size(72.dp)
-                    .clip(iconShape(settings.iconShape))
-                    .zIndex(20f),
-            )
         }
     }
 }
@@ -297,7 +244,8 @@ fun HomeCell(
     onOpenFolder: (FolderInfo) -> Unit,
     onWidgetClick: (WidgetType) -> Unit,
     onEmpty: () -> Unit,
-    onLongPress: () -> Unit,
+    onLongPress: (() -> Unit)? = null,
+    onDoubleClick: (() -> Unit)? = null,
     onDragStart: ((Offset) -> Unit)? = null,
     onDrag: ((Offset) -> Unit)? = null,
     onDragEnd: (() -> Unit)? = null,
@@ -314,6 +262,7 @@ fun HomeCell(
                     palette = palette,
                     onClick = { onLaunch(app) },
                     onLongClick = onLongPress,
+                    onDoubleClick = onDoubleClick,
                     onDragStart = onDragStart,
                     onDrag = onDrag,
                     onDragEnd = onDragEnd,
@@ -343,6 +292,7 @@ fun HomeCell(
                         palette = palette,
                         onClick = { onOpenFolder(folder) },
                         onLongClick = onLongPress,
+                        onDoubleClick = onDoubleClick,
                     )
                 }
             } else {
@@ -434,7 +384,6 @@ fun DockBar(
     palette: LauncherPalette,
     onLaunch: (AppInfo) -> Unit,
     onEmptySlot: (Int) -> Unit,
-    onLongPress: (Int) -> Unit,
 ) {
     Row(
         modifier = Modifier
@@ -457,7 +406,6 @@ fun DockBar(
                                 settings = settings,
                                 palette = palette,
                                 onClick = { onLaunch(app) },
-                                onLongClick = { onLongPress(index) },
                                 showLabel = false,
                                 size = (settings.iconSizeDp - 4).dp,
                             )
