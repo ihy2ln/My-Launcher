@@ -426,7 +426,7 @@ fun SettingsScreen(
                     }
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
-                        text = "Home Launcher · Nova-inspired · v0.10.1",
+                        text = "Home Launcher · Nova-inspired · v0.11.0",
                         color = palette.textSecondary,
                         fontSize = 12.sp,
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),

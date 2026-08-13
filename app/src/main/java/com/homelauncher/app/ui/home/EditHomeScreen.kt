@@ -547,7 +547,12 @@ fun EditHomeScreen(
                 Row {
                     TextButton(onClick = {
                         scope.launch {
-                            repository.removeFloatingWidget(widget.id)
+                            repository.removeFloatingWidgetAndHost(widget.id) { hostId ->
+                                com.homelauncher.app.widget.deleteHostWidget(
+                                    com.homelauncher.app.widget.LauncherWidgetHost.get(context),
+                                    hostId,
+                                )
+                            }
                             widgetEditTarget = null
                         }
                     }) { Text("Remove") }

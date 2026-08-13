@@ -1,5 +1,6 @@
 package com.homelauncher.app.ui.drawer
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -32,8 +33,10 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -42,12 +45,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.homelauncher.app.AppInfo
+import com.homelauncher.app.media.NowPlayingRepository
 import com.homelauncher.app.model.DrawerGroup
 import com.homelauncher.app.model.DrawerScroll
 import com.homelauncher.app.model.LauncherSettings
@@ -274,53 +282,170 @@ fun AppDrawer(
 
 @Composable
 private fun DrawerMediaCard(palette: LauncherPalette) {
+    val context = LocalContext.current
+    val repo = remember { NowPlayingRepository.get(context) }
+    DisposableEffect(repo) {
+        repo.start()
+        onDispose { /* keep listening across drawer opens */ }
+    }
+    val nowPlaying by repo.nowPlaying.collectAsState()
+    val accessGranted = remember(nowPlaying) { repo.isNotificationAccessEnabled() }
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 4.dp)
             .clip(RoundedCornerShape(20.dp))
-            .background(Color(0xFF1DB954))
+            .background(
+                when {
+                    nowPlaying.hasSession && nowPlaying.isPlaying -> Color(0xFF1DB954)
+                    nowPlaying.hasSession -> Color(0xFF2E7D32)
+                    else -> Color(0xFF1B5E20)
+                },
+            )
             .padding(16.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("♪", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
             Spacer(modifier = Modifier.width(8.dp))
-            Text("Now playing", color = Color.White, fontWeight = FontWeight.SemiBold)
+            Text(
+                if (nowPlaying.hasSession) "Now playing" else "Media",
+                color = Color.White,
+                fontWeight = FontWeight.SemiBold,
+            )
             Spacer(modifier = Modifier.weight(1f))
-            Text("Card", color = Color.White.copy(0.8f), fontSize = 12.sp)
-        }
-        Spacer(modifier = Modifier.height(12.dp))
-        Text("Something Comforting", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-        Text("Porter Robinson", color = Color.White.copy(0.85f), fontSize = 13.sp)
-        Spacer(modifier = Modifier.height(10.dp))
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(4.dp)
-                .clip(RoundedCornerShape(2.dp))
-                .background(Color.White.copy(0.35f)),
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth(0.42f)
-                    .height(4.dp)
-                    .background(Color.White),
+            Text(
+                nowPlaying.appLabel ?: if (accessGranted) "Idle" else "Setup",
+                color = Color.White.copy(0.8f),
+                fontSize = 12.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
         }
         Spacer(modifier = Modifier.height(12.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text("Get suggestions", color = Color.White.copy(0.85f), fontSize = 12.sp)
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(Color.White)
-                    .padding(horizontal = 14.dp, vertical = 6.dp),
-            ) {
-                Text("Open", color = Color(0xFF1DB954), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+
+        when {
+            nowPlaying.hasSession -> {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    val art = nowPlaying.artwork
+                    if (art != null) {
+                        Image(
+                            bitmap = art.asImageBitmap(),
+                            contentDescription = nowPlaying.title,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .size(56.dp)
+                                .clip(RoundedCornerShape(12.dp)),
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            nowPlaying.title,
+                            color = Color.White,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            nowPlaying.artist,
+                            color = Color.White.copy(0.85f),
+                            fontSize = 13.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(10.dp))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(4.dp)
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(Color.White.copy(0.35f)),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(nowPlaying.progress.coerceIn(0.02f, 1f))
+                            .height(4.dp)
+                            .background(Color.White),
+                    )
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(18.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "⏮",
+                            color = Color.White,
+                            fontSize = 18.sp,
+                            modifier = Modifier.clickable { repo.skipPrevious() },
+                        )
+                        Text(
+                            if (nowPlaying.isPlaying) "⏸" else "▶",
+                            color = Color.White,
+                            fontSize = 22.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.clickable { repo.playPause() },
+                        )
+                        Text(
+                            "⏭",
+                            color = Color.White,
+                            fontSize = 18.sp,
+                            modifier = Modifier.clickable { repo.skipNext() },
+                        )
+                    }
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(Color.White)
+                            .clickable { repo.openSessionApp() }
+                            .padding(horizontal = 14.dp, vertical = 6.dp),
+                    ) {
+                        Text("Open", color = Color(0xFF1DB954), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+            !accessGranted -> {
+                Text(
+                    "Enable notification access to show live media here.",
+                    color = Color.White,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Medium,
+                )
+                Text(
+                    "Required so the launcher can read the active media session.",
+                    color = Color.White.copy(0.8f),
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(Color.White)
+                        .clickable { repo.openNotificationListenerSettings() }
+                        .padding(horizontal = 14.dp, vertical = 8.dp),
+                ) {
+                    Text("Grant access", color = Color(0xFF1DB954), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+            else -> {
+                Text(
+                    "Nothing playing",
+                    color = Color.White,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    "Start music or a podcast and it will appear here with controls.",
+                    color = Color.White.copy(0.85f),
+                    fontSize = 13.sp,
+                )
             }
         }
     }

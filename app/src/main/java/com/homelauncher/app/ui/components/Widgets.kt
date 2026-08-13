@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -59,12 +60,37 @@ fun HomeWidgetView(
     onDoubleClick: (() -> Unit)? = null,
     app: AppInfo? = null,
     appLabel: String? = null,
+    appWidgetId: Int? = null,
+    appWidgetProvider: String? = null,
+    metadataLine: String? = null,
 ) {
-    when (type) {
+    when {
+        appWidgetId != null && appWidgetId != android.appwidget.AppWidgetManager.INVALID_APPWIDGET_ID -> {
+            Box(
+                modifier = modifier
+                    .fillMaxSize()
+                    .clip(RoundedCornerShape(16.dp))
+                    .then(
+                        if (onLongClick != null || onDoubleClick != null) {
+                            Modifier.widgetClickable(onClick, onLongClick, onDoubleClick)
+                        } else {
+                            Modifier
+                        },
+                    ),
+            ) {
+                com.homelauncher.app.widget.HostedAppWidget(
+                    appWidgetId = appWidgetId,
+                    providerFlat = appWidgetProvider,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+        }
+        else -> when (type) {
         WidgetType.BLANK -> BlankAppWidgetCard(
             palette = palette,
             app = app,
             label = appLabel ?: title ?: "App widget",
+            metadataLine = metadataLine,
             onClick = onClick,
             onLongClick = onLongClick,
             onDoubleClick = onDoubleClick,
@@ -103,17 +129,33 @@ fun HomeWidgetView(
             onLongClick = onLongClick,
             modifier = modifier,
         )
-        WidgetType.SPOTIFY -> MediaWidgetCard(
-            brand = Color(0xFF1DB954),
-            glyph = "♪",
-            headline = title ?: "Spotify",
-            subtitle = "Something Comforting",
-            detail = "Porter Robinson",
-            onClick = onClick,
-            onLongClick = onLongClick,
-            modifier = modifier,
-            showProgress = true,
-        )
+        WidgetType.SPOTIFY -> {
+            val context = androidx.compose.ui.platform.LocalContext.current
+            val repo = remember { com.homelauncher.app.media.NowPlayingRepository.get(context) }
+            val nowPlaying by repo.nowPlaying.collectAsState()
+            val isSpotify = nowPlaying.packageName?.contains("spotify", true) == true
+            MediaWidgetCard(
+                brand = Color(0xFF1DB954),
+                glyph = "♪",
+                headline = when {
+                    isSpotify && nowPlaying.hasSession -> nowPlaying.title
+                    else -> title ?: "Spotify"
+                },
+                subtitle = when {
+                    isSpotify && nowPlaying.hasSession -> nowPlaying.artist
+                    else -> "Now playing"
+                },
+                detail = if (isSpotify && nowPlaying.hasSession) nowPlaying.appLabel else null,
+                onClick = onClick,
+                onLongClick = onLongClick,
+                modifier = modifier,
+                showProgress = true,
+                progress = if (isSpotify && nowPlaying.hasSession) nowPlaying.progress else 0.42f,
+                onPlayPause = { repo.playPause() },
+                onNext = { repo.skipNext() },
+                onPrev = { repo.skipPrevious() },
+            )
+        }
         WidgetType.MUSIC -> MusicPlayerWidgetCard(
             palette = palette,
             app = app,
@@ -144,6 +186,7 @@ fun HomeWidgetView(
         WidgetType.SEARCH -> SearchWidgetCard(palette, onClick, modifier, title, onLongClick, onDoubleClick)
         WidgetType.CALENDAR -> CalendarWidgetCard(palette, onClick, modifier, title, onLongClick, onDoubleClick)
         WidgetType.NOTES -> NotesWidgetCard(palette, onClick, modifier, title, onLongClick, onDoubleClick)
+        }
     }
 }
 
@@ -157,6 +200,7 @@ private fun BlankAppWidgetCard(
     modifier: Modifier = Modifier,
     onLongClick: (() -> Unit)? = null,
     onDoubleClick: (() -> Unit)? = null,
+    metadataLine: String? = null,
 ) {
     Column(
         modifier = modifier
@@ -198,7 +242,13 @@ private fun BlankAppWidgetCard(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Text("Tap to open", color = palette.textSecondary, fontSize = 10.sp)
+            Text(
+                metadataLine ?: "${com.homelauncher.app.widget.categoryLabel(app.category)} · Tap to operate",
+                color = palette.textSecondary,
+                fontSize = 10.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         } else {
             Text("+", color = palette.textSecondary, fontSize = 28.sp)
             Text("Choose app", color = palette.textSecondary, fontSize = 11.sp)
@@ -353,6 +403,10 @@ private fun MediaWidgetCard(
     modifier: Modifier = Modifier,
     detail: String? = null,
     showProgress: Boolean = false,
+    progress: Float = 0.42f,
+    onPlayPause: (() -> Unit)? = null,
+    onNext: (() -> Unit)? = null,
+    onPrev: (() -> Unit)? = null,
 ) {
     Column(
         modifier = modifier
@@ -400,10 +454,18 @@ private fun MediaWidgetCard(
             ) {
                 Box(
                     modifier = Modifier
-                        .fillMaxWidth(0.42f)
+                        .fillMaxWidth(progress.coerceIn(0.02f, 1f))
                         .height(3.dp)
                         .background(Color.White),
                 )
+            }
+        }
+        if (onPlayPause != null) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+                Text("⏮", color = Color.White, fontSize = 14.sp, modifier = Modifier.combinedClickable(onClick = { onPrev?.invoke() }))
+                Text("⏯", color = Color.White, fontSize = 16.sp, modifier = Modifier.combinedClickable(onClick = onPlayPause))
+                Text("⏭", color = Color.White, fontSize = 14.sp, modifier = Modifier.combinedClickable(onClick = { onNext?.invoke() }))
             }
         }
     }
@@ -517,6 +579,17 @@ private fun MusicPlayerWidgetCard(
     onLongClick: (() -> Unit)? = null,
     onDoubleClick: (() -> Unit)? = null,
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val repo = remember { com.homelauncher.app.media.NowPlayingRepository.get(context) }
+    val nowPlaying by repo.nowPlaying.collectAsState()
+    val matchesApp = app == null || nowPlaying.packageName == null || nowPlaying.packageName == app.packageName
+    val headline = if (matchesApp && nowPlaying.hasSession) nowPlaying.title else title
+    val subtitle = when {
+        matchesApp && nowPlaying.hasSession -> nowPlaying.artist
+        else -> "Music · Tap for session"
+    }
+    val progress = if (matchesApp && nowPlaying.hasSession) nowPlaying.progress.coerceIn(0.02f, 1f) else 0.45f
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -547,15 +620,31 @@ private fun MusicPlayerWidgetCard(
             }
             Spacer(modifier = Modifier.width(10.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(title, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text("Music · Now playing", color = Color.White.copy(0.85f), fontSize = 11.sp)
+                Text(headline, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(subtitle, color = Color.White.copy(0.85f), fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
         Spacer(modifier = Modifier.height(8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("⏮", color = Color.White, fontSize = 14.sp)
-            Text("▶", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-            Text("⏭", color = Color.White, fontSize = 14.sp)
+            Text(
+                "⏮",
+                color = Color.White,
+                fontSize = 14.sp,
+                modifier = Modifier.combinedClickable(onClick = { repo.skipPrevious() }),
+            )
+            Text(
+                if (matchesApp && nowPlaying.isPlaying) "⏸" else "▶",
+                color = Color.White,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.combinedClickable(onClick = { repo.playPause() }),
+            )
+            Text(
+                "⏭",
+                color = Color.White,
+                fontSize = 14.sp,
+                modifier = Modifier.combinedClickable(onClick = { repo.skipNext() }),
+            )
             Box(
                 modifier = Modifier
                     .weight(1f)
@@ -565,7 +654,7 @@ private fun MusicPlayerWidgetCard(
             ) {
                 Box(
                     modifier = Modifier
-                        .fillMaxWidth(0.45f)
+                        .fillMaxWidth(progress)
                         .height(3.dp)
                         .background(Color.White),
                 )

@@ -22,6 +22,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
@@ -53,6 +54,7 @@ fun FloatingWidgetsLayer(
     onResize: (FloatingWidget, widthFrac: Float, heightFrac: Float) -> Unit,
 ) {
     if (widgets.isEmpty()) return
+    val context = LocalContext.current
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
@@ -76,6 +78,19 @@ fun FloatingWidgetsLayer(
                 widget.title.isNotBlank() -> widget.title
                 boundApp != null -> displayAppLabel(boundApp.key, boundApp.label, appAliases)
                 else -> widget.type.displayName()
+            }
+            val metadataLine = boundApp?.let { app ->
+                val version = runCatching {
+                    context.packageManager.getPackageInfo(app.packageName, 0).versionName
+                }.getOrNull()
+                buildString {
+                    append(com.homelauncher.app.widget.categoryLabel(app.category))
+                    if (!version.isNullOrBlank()) append(" · v$version")
+                    when {
+                        widget.hasHostedAppWidget() -> append(" · Live widget")
+                        widget.embedSession -> append(" · In-widget session")
+                    }
+                }
             }
 
             Box(
@@ -113,12 +128,19 @@ fun FloatingWidgetsLayer(
                     ),
             ) {
                 HomeWidgetView(
-                    type = if (widget.type == WidgetType.BLANK && widget.appKey == null) WidgetType.BLANK else displayType,
+                    type = when {
+                        widget.hasHostedAppWidget() -> WidgetType.BLANK
+                        widget.type == WidgetType.BLANK && widget.appKey == null -> WidgetType.BLANK
+                        else -> displayType
+                    },
                     palette = palette,
                     size = hDp,
                     title = displayLabel,
                     app = boundApp,
                     appLabel = displayLabel,
+                    appWidgetId = widget.appWidgetId,
+                    appWidgetProvider = widget.appWidgetProvider,
+                    metadataLine = metadataLine,
                     onClick = { if (!editable) onClick(widget) },
                     onDoubleClick = if (editable) {{ onDoubleTap(widget) }} else null,
                     modifier = Modifier

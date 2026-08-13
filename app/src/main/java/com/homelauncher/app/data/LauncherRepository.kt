@@ -195,11 +195,34 @@ class LauncherRepository(private val context: Context) {
         layout.copy(floatingWidgets = layout.floatingWidgets.filterNot { it.id == id })
     }
 
-    suspend fun bindBlankWidget(widgetId: String, appKey: String, linkedType: WidgetType?) = mutateLayout { layout ->
+    suspend fun removeFloatingWidgetAndHost(id: String, onDeleteHostId: (Int?) -> Unit) {
+        var deletedId: Int? = null
+        mutateLayout { layout ->
+            val target = layout.floatingWidgets.firstOrNull { it.id == id }
+            deletedId = target?.appWidgetId
+            layout.copy(floatingWidgets = layout.floatingWidgets.filterNot { it.id == id })
+        }
+        onDeleteHostId(deletedId)
+    }
+
+    suspend fun bindBlankWidget(
+        widgetId: String,
+        appKey: String,
+        linkedType: WidgetType?,
+        appWidgetId: Int? = null,
+        appWidgetProvider: String? = null,
+        embedSession: Boolean = false,
+    ) = mutateLayout { layout ->
         layout.copy(
             floatingWidgets = layout.floatingWidgets.map { widget ->
                 if (widget.id == widgetId) {
-                    widget.copy(appKey = appKey, linkedType = linkedType)
+                    widget.copy(
+                        appKey = appKey,
+                        linkedType = linkedType,
+                        appWidgetId = appWidgetId,
+                        appWidgetProvider = appWidgetProvider,
+                        embedSession = embedSession,
+                    )
                 } else widget
             },
         )
@@ -582,6 +605,9 @@ class LauncherRepository(private val context: Context) {
                     if (w.appKey != null) put("appKey", w.appKey)
                     if (w.linkedType != null) put("linkedType", w.linkedType.name)
                     put("opacity", w.opacity.toDouble())
+                    if (w.appWidgetId != null) put("appWidgetId", w.appWidgetId)
+                    if (w.appWidgetProvider != null) put("appWidgetProvider", w.appWidgetProvider)
+                    put("embedSession", w.embedSession)
                 })
             }
             return array.toString()
@@ -599,6 +625,7 @@ class LauncherRepository(private val context: Context) {
                         runCatching { WidgetType.valueOf(it) }.getOrNull()
                     }
                     val appKeyRaw = if (obj.has("appKey")) obj.optString("appKey") else ""
+                    val appWidgetId = if (obj.has("appWidgetId")) obj.optInt("appWidgetId") else null
                     FloatingWidget(
                         id = obj.getString("id"),
                         type = type,
@@ -610,6 +637,9 @@ class LauncherRepository(private val context: Context) {
                         appKey = appKeyRaw.takeIf { it.isNotBlank() },
                         linkedType = linkedType,
                         opacity = obj.optDouble("opacity", 1.0).toFloat(),
+                        appWidgetId = appWidgetId,
+                        appWidgetProvider = obj.optString("appWidgetProvider").takeIf { it.isNotBlank() },
+                        embedSession = obj.optBoolean("embedSession", false),
                     )
                 }
             } catch (_: Exception) {

@@ -219,8 +219,19 @@ data class FloatingWidget(
     val appKey: String? = null,
     val linkedType: WidgetType? = null,
     val opacity: Float = 1f,
+    /** Hosted [android.appwidget.AppWidgetHost] id when a real provider is bound. */
+    val appWidgetId: Int? = null,
+    /** Flattened [android.content.ComponentName] of the AppWidgetProvider. */
+    val appWidgetProvider: String? = null,
+    /** When true, tap opens an in-widget workspace instead of only launching the app. */
+    val embedSession: Boolean = false,
 ) {
+    fun hasHostedAppWidget(): Boolean =
+        appWidgetId != null && appWidgetId != android.appwidget.AppWidgetManager.INVALID_APPWIDGET_ID
+
     fun effectiveType(): WidgetType = when {
+        // Prefer the real hosted AppWidget surface over themed placeholders.
+        type == WidgetType.BLANK && hasHostedAppWidget() -> WidgetType.BLANK
         type == WidgetType.BLANK && linkedType != null -> linkedType
         else -> type
     }

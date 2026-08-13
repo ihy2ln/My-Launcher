@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">Home Launcher</string>
+    <string name="media_listener_label">Home Launcher media access</string>
 </resources>

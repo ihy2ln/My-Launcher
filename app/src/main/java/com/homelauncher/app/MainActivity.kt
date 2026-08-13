@@ -1,10 +1,14 @@
 package com.homelauncher.app
 
+import android.appwidget.AppWidgetManager
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
@@ -32,6 +36,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -73,6 +78,13 @@ import com.homelauncher.app.ui.search.GlobalSearchOverlay
 import com.homelauncher.app.ui.settings.SettingsScreen
 import com.homelauncher.app.ui.theme.HomeLauncherTheme
 import com.homelauncher.app.ui.theme.rememberPalette
+import com.homelauncher.app.widget.EmbeddedAppWorkspace
+import com.homelauncher.app.widget.LauncherWidgetHost
+import com.homelauncher.app.widget.allocateAndBindWidget
+import com.homelauncher.app.widget.categoryLabel
+import com.homelauncher.app.widget.deleteHostWidget
+import com.homelauncher.app.widget.findAppWidgetProviders
+import com.homelauncher.app.widget.flattenProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -80,8 +92,20 @@ import kotlinx.coroutines.withContext
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Keep AppWidgetHost + media session listeners alive for the launcher process.
+        com.homelauncher.app.widget.LauncherWidgetHost.get(this)
+        com.homelauncher.app.media.NowPlayingRepository.get(this).start()
         enableEdgeToEdge()
         setContent { HomeLauncherApp() }
+    }
+
+    override fun onDestroy() {
+        if (isFinishing) {
+            runCatching {
+                com.homelauncher.app.media.NowPlayingRepository.get(this).stop()
+            }
+        }
+        super.onDestroy()
     }
 }
 
@@ -133,6 +157,124 @@ fun HomeLauncherApp() {
     var settingsSection by remember { mutableStateOf<String?>(null) }
     var popoutTarget by remember { mutableStateOf<Pair<AppInfo, WidgetType?>?>(null) }
     var blankWidgetBindTarget by remember { mutableStateOf<String?>(null) }
+    var workspaceTarget by remember { mutableStateOf<AppInfo?>(null) }
+    var pendingWidgetBind by remember {
+        mutableStateOf<Triple<String, AppInfo, android.content.ComponentName>?>(null)
+    }
+    val widgetHost = remember { LauncherWidgetHost.get(context) }
+
+    val bindWidgetLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        val pending = pendingWidgetBind
+        pendingWidgetBind = null
+        if (pending == null) return@rememberLauncherForActivityResult
+        val (widgetId, app, provider) = pending
+        val appWidgetId = result.data?.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID)
+            ?: AppWidgetManager.INVALID_APPWIDGET_ID
+        scope.launch {
+            val linked = resolveWidgetTheme(app.packageName, app.category)
+            val widget = layout.floatingWidgets.firstOrNull { it.id == widgetId }
+            if (result.resultCode == android.app.Activity.RESULT_OK &&
+                appWidgetId != AppWidgetManager.INVALID_APPWIDGET_ID
+            ) {
+                val updated = (widget ?: return@launch).copy(
+                    appKey = app.key,
+                    linkedType = linked,
+                    title = app.label,
+                    appWidgetId = appWidgetId,
+                    appWidgetProvider = flattenProvider(provider),
+                    embedSession = false,
+                    widthFrac = 0.55f,
+                    heightFrac = 0.22f,
+                )
+                repository.updateFloatingWidget(updated)
+            } else {
+                deleteHostWidget(widgetHost, appWidgetId.takeIf { it != AppWidgetManager.INVALID_APPWIDGET_ID })
+                if (widget != null) {
+                    repository.updateFloatingWidget(
+                        widget.copy(
+                            appKey = app.key,
+                            linkedType = linked,
+                            title = app.label,
+                            appWidgetId = null,
+                            appWidgetProvider = null,
+                            embedSession = true,
+                        ),
+                    )
+                }
+            }
+        }
+    }
+
+    fun bindAppToWidget(widgetId: String, app: AppInfo) {
+        scope.launch {
+            val linked = resolveWidgetTheme(app.packageName, app.category)
+            val widget = layout.floatingWidgets.firstOrNull { it.id == widgetId }
+            val providers = findAppWidgetProviders(context, app.packageName)
+            val preferred = providers.maxByOrNull { it.minWidth * it.minHeight } ?: providers.firstOrNull()
+
+            if (preferred != null) {
+                deleteHostWidget(widgetHost, widget?.appWidgetId)
+                val bindIntents = mutableListOf<Intent>()
+                val allocated = allocateAndBindWidget(
+                    context = context,
+                    host = widgetHost,
+                    provider = preferred.provider.provider,
+                    bindIntentOut = bindIntents,
+                )
+                if (allocated != null) {
+                    val updated = (widget ?: return@launch).copy(
+                        appKey = app.key,
+                        linkedType = linked,
+                        title = app.label,
+                        appWidgetId = allocated,
+                        appWidgetProvider = flattenProvider(preferred.provider.provider),
+                        embedSession = false,
+                        widthFrac = maxOf(widget.widthFrac, 0.5f),
+                        heightFrac = maxOf(widget.heightFrac, 0.2f),
+                    )
+                    repository.updateFloatingWidget(updated)
+                } else {
+                    pendingWidgetBind = Triple(widgetId, app, preferred.provider.provider)
+                    bindIntents.firstOrNull()?.let { bindWidgetLauncher.launch(it) }
+                }
+            } else {
+                deleteHostWidget(widgetHost, widget?.appWidgetId)
+                if (widget != null) {
+                    repository.updateFloatingWidget(
+                        widget.copy(
+                            appKey = app.key,
+                            linkedType = linked,
+                            title = app.label,
+                            appWidgetId = null,
+                            appWidgetProvider = null,
+                            embedSession = true,
+                            widthFrac = when (linked) {
+                                WidgetType.VIDEO, WidgetType.YOUTUBE, WidgetType.TWITCH -> 0.58f
+                                WidgetType.MUSIC, WidgetType.SPOTIFY, WidgetType.POWERAMP -> 0.55f
+                                WidgetType.GAME -> 0.4f
+                                else -> widget.widthFrac
+                            },
+                            heightFrac = when (linked) {
+                                WidgetType.VIDEO, WidgetType.YOUTUBE -> 0.18f
+                                WidgetType.MUSIC, WidgetType.SPOTIFY, WidgetType.POWERAMP -> 0.16f
+                                WidgetType.GAME -> 0.16f
+                                else -> widget.heightFrac
+                            },
+                        ),
+                    )
+                } else {
+                    repository.bindBlankWidget(
+                        widgetId = widgetId,
+                        appKey = app.key,
+                        linkedType = linked,
+                        embedSession = true,
+                    )
+                }
+            }
+        }
+    }
 
     val apps by produceState(initialValue = emptyList<AppInfo>(), context) {
         value = withContext(Dispatchers.Default) { loadInstalledApps(context) }
@@ -163,11 +305,15 @@ fun HomeLauncherApp() {
 
     fun handleFloatingWidgetClick(widget: com.homelauncher.app.model.FloatingWidget) {
         val boundApp = widget.appKey?.let { findApp(apps, it) }
+        // Real hosted AppWidgets handle their own clicks inside the host view.
+        if (widget.hasHostedAppWidget()) return
         when (val type = widget.effectiveType()) {
             WidgetType.APP_DRAWER -> overlay = Overlay.Drawer
             WidgetType.CLOCK, WidgetType.WEATHER -> Unit
             WidgetType.BLANK -> {
-                if (boundApp != null) popoutTarget = boundApp to null
+                if (boundApp != null) {
+                    workspaceTarget = boundApp
+                }
             }
             WidgetType.GAME -> {
                 if (boundApp != null) {
@@ -178,14 +324,22 @@ fun HomeLauncherApp() {
             WidgetType.YOUTUBE, WidgetType.TWITCH,
             -> {
                 if (boundApp != null) {
-                    launchApp(context, boundApp)
+                    if (widget.embedSession || widget.type == WidgetType.BLANK) {
+                        workspaceTarget = boundApp
+                    } else {
+                        launchApp(context, boundApp)
+                    }
                 } else {
                     launchPackageOrUrl(context, type.launchPackages(), type.webFallback())
                 }
             }
             else -> {
                 if (boundApp != null) {
-                    launchApp(context, boundApp)
+                    if (widget.embedSession) {
+                        workspaceTarget = boundApp
+                    } else {
+                        launchApp(context, boundApp)
+                    }
                 } else {
                     launchPackageOrUrl(context, type.launchPackages(), type.webFallback())
                 }
@@ -371,39 +525,13 @@ fun HomeLauncherApp() {
                             } else {
                             val bindWidgetId = blankWidgetBindTarget
                             if (bindWidgetId != null) {
-                                scope.launch {
-                                    val linked = resolveWidgetTheme(app.packageName, app.category)
-                                    val widget = layout.floatingWidgets.firstOrNull { it.id == bindWidgetId }
-                                    if (widget != null) {
-                                        repository.updateFloatingWidget(
-                                            widget.copy(
-                                                appKey = app.key,
-                                                linkedType = linked,
-                                                title = app.label,
-                                                widthFrac = when (linked) {
-                                                    WidgetType.VIDEO, WidgetType.YOUTUBE, WidgetType.TWITCH -> 0.58f
-                                                    WidgetType.MUSIC, WidgetType.SPOTIFY, WidgetType.POWERAMP -> 0.55f
-                                                    WidgetType.GAME -> 0.4f
-                                                    else -> widget.widthFrac
-                                                },
-                                                heightFrac = when (linked) {
-                                                    WidgetType.VIDEO, WidgetType.YOUTUBE -> 0.18f
-                                                    WidgetType.MUSIC, WidgetType.SPOTIFY, WidgetType.POWERAMP -> 0.16f
-                                                    WidgetType.GAME -> 0.16f
-                                                    else -> widget.heightFrac
-                                                },
-                                            ),
-                                        )
-                                    } else {
-                                        repository.bindBlankWidget(bindWidgetId, app.key, linked)
-                                    }
-                                    blankWidgetBindTarget = null
-                                    overlay = if (returnToEditAfterPick) {
-                                        returnToEditAfterPick = false
-                                        Overlay.EditHome
-                                    } else {
-                                        Overlay.None
-                                    }
+                                bindAppToWidget(bindWidgetId, app)
+                                blankWidgetBindTarget = null
+                                overlay = if (returnToEditAfterPick) {
+                                    returnToEditAfterPick = false
+                                    Overlay.EditHome
+                                } else {
+                                    Overlay.None
                                 }
                             } else {
                             val target = placementTarget
@@ -500,6 +628,23 @@ fun HomeLauncherApp() {
                     launchApp(context, app)
                 },
                 onDismiss = { popoutTarget = null },
+            )
+        }
+
+        workspaceTarget?.let { app ->
+            EmbeddedAppWorkspace(
+                app = app,
+                metadataSummary = buildString {
+                    append(categoryLabel(app.category))
+                    append(" · ")
+                    append(app.packageName)
+                },
+                palette = palette,
+                onOpenFullApp = {
+                    workspaceTarget = null
+                    launchApp(context, app)
+                },
+                onDismiss = { workspaceTarget = null },
             )
         }
 
