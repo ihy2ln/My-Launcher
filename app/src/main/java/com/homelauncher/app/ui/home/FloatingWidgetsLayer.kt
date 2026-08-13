@@ -37,6 +37,7 @@ import com.homelauncher.app.model.displayAppLabel
 import com.homelauncher.app.model.displayName
 import com.homelauncher.app.ui.components.HomeWidgetView
 import com.homelauncher.app.ui.theme.LauncherPalette
+import com.homelauncher.app.widget.NativeAppWidgetView
 import kotlin.math.roundToInt
 
 @Composable
@@ -112,27 +113,43 @@ fun FloatingWidgetsLayer(
                         },
                     ),
             ) {
-                HomeWidgetView(
-                    type = if (widget.type == WidgetType.BLANK && widget.appKey == null) WidgetType.BLANK else displayType,
-                    palette = palette,
-                    size = hDp,
-                    title = displayLabel,
-                    app = boundApp,
-                    appLabel = displayLabel,
-                    onClick = { if (!editable) onClick(widget) },
-                    onDoubleClick = if (editable) {{ onDoubleTap(widget) }} else null,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .then(
-                            if (editable) {
-                                Modifier.pointerInput(widget.id) {
-                                    detectTapGestures(onTap = { /* drag layer handles move */ })
-                                }
-                            } else {
-                                Modifier
-                            },
-                        ),
-                )
+                if (widget.hostsNativeWidget && !editable) {
+                    NativeAppWidgetView(
+                        appWidgetId = widget.appWidgetId,
+                        providerFlat = widget.providerFlat,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(RoundedCornerShape(16.dp)),
+                    )
+                } else {
+                    HomeWidgetView(
+                        type = if (widget.type == WidgetType.BLANK && widget.appKey == null && !widget.hostsNativeWidget) {
+                            WidgetType.BLANK
+                        } else if (widget.hostsNativeWidget) {
+                            WidgetType.BLANK
+                        } else {
+                            displayType
+                        },
+                        palette = palette,
+                        size = hDp,
+                        title = displayLabel,
+                        app = boundApp,
+                        appLabel = displayLabel,
+                        onClick = { if (!editable) onClick(widget) },
+                        onDoubleClick = if (editable) {{ onDoubleTap(widget) }} else null,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .then(
+                                if (editable) {
+                                    Modifier.pointerInput(widget.id) {
+                                        detectTapGestures(onTap = { /* drag layer handles move */ })
+                                    }
+                                } else {
+                                    Modifier
+                                },
+                            ),
+                    )
+                }
 
                 if (editable) {
                     Box(

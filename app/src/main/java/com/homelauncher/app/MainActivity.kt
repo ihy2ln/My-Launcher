@@ -1,10 +1,15 @@
 package com.homelauncher.app
 
+import android.app.Activity
+import android.content.ComponentName
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
@@ -32,6 +37,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -51,7 +57,9 @@ import com.homelauncher.app.findApp
 import com.homelauncher.app.launchApp
 import com.homelauncher.app.launchPackageOrUrl
 import com.homelauncher.app.loadInstalledApps
+import com.homelauncher.app.media.MediaNotificationListener
 import com.homelauncher.app.model.DrawerGroup
+import com.homelauncher.app.model.FloatingWidget
 import com.homelauncher.app.model.FolderInfo
 import com.homelauncher.app.model.GestureAction
 import com.homelauncher.app.model.HomeSlot
@@ -73,6 +81,9 @@ import com.homelauncher.app.ui.search.GlobalSearchOverlay
 import com.homelauncher.app.ui.settings.SettingsScreen
 import com.homelauncher.app.ui.theme.HomeLauncherTheme
 import com.homelauncher.app.ui.theme.rememberPalette
+import com.homelauncher.app.widget.LauncherAppWidgetHost
+import com.homelauncher.app.widget.NativeBindOutcome
+import com.homelauncher.app.widget.bindNativeWidgetForPackage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -80,10 +91,26 @@ import kotlinx.coroutines.withContext
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        LauncherAppWidgetHost.startListening(this)
         enableEdgeToEdge()
         setContent { HomeLauncherApp() }
     }
+
+    override fun onDestroy() {
+        if (isFinishing) {
+            LauncherAppWidgetHost.stopListening()
+        }
+        super.onDestroy()
+    }
 }
+
+private data class PendingNativeBind(
+    val widgetId: String,
+    val app: AppInfo,
+    val linkedType: WidgetType?,
+    val appWidgetId: Int,
+    val provider: ComponentName,
+)
 
 private sealed interface PlacementTarget {
     data class Home(val index: Int) : PlacementTarget
@@ -133,9 +160,120 @@ fun HomeLauncherApp() {
     var settingsSection by remember { mutableStateOf<String?>(null) }
     var popoutTarget by remember { mutableStateOf<Pair<AppInfo, WidgetType?>?>(null) }
     var blankWidgetBindTarget by remember { mutableStateOf<String?>(null) }
+    var pendingNativeBind by remember { mutableStateOf<PendingNativeBind?>(null) }
+    var mediaAccessPrompt by remember { mutableStateOf(false) }
 
     val apps by produceState(initialValue = emptyList<AppInfo>(), context) {
         value = withContext(Dispatchers.Default) { loadInstalledApps(context) }
+    }
+
+    DisposableEffect(Unit) {
+        LauncherAppWidgetHost.startListening(context)
+        if (!MediaNotificationListener.isNotificationAccessEnabled(context)) {
+            mediaAccessPrompt = settings.showDrawerCards
+        }
+        onDispose { }
+    }
+
+    fun applyBoundWidget(
+        widgetId: String,
+        app: AppInfo,
+        linked: WidgetType?,
+        appWidgetId: Int = -1,
+        providerFlat: String? = null,
+    ) {
+        scope.launch {
+            val widget = layout.floatingWidgets.firstOrNull { it.id == widgetId }
+            if (widget != null) {
+                val hostsNative = appWidgetId != -1 && !providerFlat.isNullOrBlank()
+                repository.updateFloatingWidget(
+                    widget.copy(
+                        appKey = app.key,
+                        linkedType = if (hostsNative) null else linked,
+                        title = app.label,
+                        appWidgetId = appWidgetId,
+                        providerFlat = providerFlat,
+                        widthFrac = when {
+                            hostsNative -> 0.55f
+                            linked == WidgetType.VIDEO || linked == WidgetType.YOUTUBE || linked == WidgetType.TWITCH -> 0.58f
+                            linked == WidgetType.MUSIC || linked == WidgetType.SPOTIFY || linked == WidgetType.POWERAMP -> 0.55f
+                            linked == WidgetType.GAME -> 0.4f
+                            else -> widget.widthFrac
+                        },
+                        heightFrac = when {
+                            hostsNative -> 0.22f
+                            linked == WidgetType.VIDEO || linked == WidgetType.YOUTUBE -> 0.18f
+                            linked == WidgetType.MUSIC || linked == WidgetType.SPOTIFY || linked == WidgetType.POWERAMP -> 0.16f
+                            linked == WidgetType.GAME -> 0.16f
+                            else -> widget.heightFrac
+                        },
+                    ),
+                )
+            } else {
+                repository.bindBlankWidget(widgetId, app.key, linked, appWidgetId, providerFlat)
+            }
+            blankWidgetBindTarget = null
+            overlay = if (returnToEditAfterPick) {
+                returnToEditAfterPick = false
+                Overlay.EditHome
+            } else {
+                Overlay.None
+            }
+        }
+    }
+
+    val bindWidgetLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        val pending = pendingNativeBind
+        pendingNativeBind = null
+        if (pending == null) return@rememberLauncherForActivityResult
+        if (result.resultCode == Activity.RESULT_OK) {
+            val configure = LauncherAppWidgetHost.configureIfNeeded(context, pending.appWidgetId)
+            if (configure != null) {
+                runCatching { context.startActivity(configure) }
+            }
+            applyBoundWidget(
+                widgetId = pending.widgetId,
+                app = pending.app,
+                linked = pending.linkedType,
+                appWidgetId = pending.appWidgetId,
+                providerFlat = pending.provider.flattenToString(),
+            )
+        } else {
+            LauncherAppWidgetHost.deleteId(context, pending.appWidgetId)
+            // Fall back to metadata / in-widget operate mode
+            applyBoundWidget(pending.widgetId, pending.app, pending.linkedType)
+        }
+    }
+
+    fun bindAppToBlankWidget(widgetId: String, app: AppInfo) {
+        val linked = resolveWidgetTheme(app.packageName, app.category)
+        when (val outcome = bindNativeWidgetForPackage(context, app.packageName)) {
+            is NativeBindOutcome.Success -> {
+                if (outcome.configureIntent != null) {
+                    runCatching { context.startActivity(outcome.configureIntent) }
+                }
+                applyBoundWidget(
+                    widgetId = widgetId,
+                    app = app,
+                    linked = linked,
+                    appWidgetId = outcome.appWidgetId,
+                    providerFlat = outcome.provider.flattenToString(),
+                )
+            }
+            is NativeBindOutcome.NeedsUserConsent -> {
+                pendingNativeBind = PendingNativeBind(
+                    widgetId = widgetId,
+                    app = app,
+                    linkedType = linked,
+                    appWidgetId = outcome.appWidgetId,
+                    provider = outcome.provider,
+                )
+                bindWidgetLauncher.launch(outcome.bindIntent)
+            }
+            NativeBindOutcome.NoProvider -> applyBoundWidget(widgetId, app, linked)
+        }
     }
 
     fun runGesture(action: GestureAction) {
@@ -161,7 +299,8 @@ fun HomeLauncherApp() {
         overlay = Overlay.GlobalSearch
     }
 
-    fun handleFloatingWidgetClick(widget: com.homelauncher.app.model.FloatingWidget) {
+    fun handleFloatingWidgetClick(widget: FloatingWidget) {
+        if (widget.hostsNativeWidget) return
         val boundApp = widget.appKey?.let { findApp(apps, it) }
         when (val type = widget.effectiveType()) {
             WidgetType.APP_DRAWER -> overlay = Overlay.Drawer
@@ -170,22 +309,21 @@ fun HomeLauncherApp() {
                 if (boundApp != null) popoutTarget = boundApp to null
             }
             WidgetType.GAME -> {
-                if (boundApp != null) {
-                    popoutTarget = boundApp to WidgetType.GAME
-                }
+                if (boundApp != null) popoutTarget = boundApp to WidgetType.GAME
             }
             WidgetType.MUSIC, WidgetType.VIDEO, WidgetType.POWERAMP, WidgetType.SPOTIFY,
             WidgetType.YOUTUBE, WidgetType.TWITCH,
             -> {
                 if (boundApp != null) {
-                    launchApp(context, boundApp)
+                    // Operate inside the widget frame (media controls / metadata)
+                    popoutTarget = boundApp to type
                 } else {
                     launchPackageOrUrl(context, type.launchPackages(), type.webFallback())
                 }
             }
             else -> {
                 if (boundApp != null) {
-                    launchApp(context, boundApp)
+                    popoutTarget = boundApp to type
                 } else {
                     launchPackageOrUrl(context, type.launchPackages(), type.webFallback())
                 }
@@ -371,40 +509,7 @@ fun HomeLauncherApp() {
                             } else {
                             val bindWidgetId = blankWidgetBindTarget
                             if (bindWidgetId != null) {
-                                scope.launch {
-                                    val linked = resolveWidgetTheme(app.packageName, app.category)
-                                    val widget = layout.floatingWidgets.firstOrNull { it.id == bindWidgetId }
-                                    if (widget != null) {
-                                        repository.updateFloatingWidget(
-                                            widget.copy(
-                                                appKey = app.key,
-                                                linkedType = linked,
-                                                title = app.label,
-                                                widthFrac = when (linked) {
-                                                    WidgetType.VIDEO, WidgetType.YOUTUBE, WidgetType.TWITCH -> 0.58f
-                                                    WidgetType.MUSIC, WidgetType.SPOTIFY, WidgetType.POWERAMP -> 0.55f
-                                                    WidgetType.GAME -> 0.4f
-                                                    else -> widget.widthFrac
-                                                },
-                                                heightFrac = when (linked) {
-                                                    WidgetType.VIDEO, WidgetType.YOUTUBE -> 0.18f
-                                                    WidgetType.MUSIC, WidgetType.SPOTIFY, WidgetType.POWERAMP -> 0.16f
-                                                    WidgetType.GAME -> 0.16f
-                                                    else -> widget.heightFrac
-                                                },
-                                            ),
-                                        )
-                                    } else {
-                                        repository.bindBlankWidget(bindWidgetId, app.key, linked)
-                                    }
-                                    blankWidgetBindTarget = null
-                                    overlay = if (returnToEditAfterPick) {
-                                        returnToEditAfterPick = false
-                                        Overlay.EditHome
-                                    } else {
-                                        Overlay.None
-                                    }
-                                }
+                                bindAppToBlankWidget(bindWidgetId, app)
                             } else {
                             val target = placementTarget
                             if (target == null) {
@@ -503,8 +608,31 @@ fun HomeLauncherApp() {
             )
         }
 
-        BackHandler(enabled = overlay != Overlay.None || openFolder != null) {
+        if (mediaAccessPrompt) {
+            AlertDialog(
+                onDismissRequest = { mediaAccessPrompt = false },
+                title = { Text("Show real media?") },
+                text = {
+                    Text(
+                        "Allow notification access so the drawer Now Playing card and music widgets " +
+                            "can read the active media session and respond to play/pause.",
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        mediaAccessPrompt = false
+                        MediaNotificationListener.openNotificationAccessSettings(context)
+                    }) { Text("Enable") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { mediaAccessPrompt = false }) { Text("Later") }
+                },
+            )
+        }
+
+        BackHandler(enabled = overlay != Overlay.None || openFolder != null || popoutTarget != null) {
             when {
+                popoutTarget != null -> popoutTarget = null
                 openFolder != null -> openFolder = null
                 overlay != Overlay.None -> {
                     overlay = Overlay.None

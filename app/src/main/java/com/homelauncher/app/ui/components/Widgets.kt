@@ -1,8 +1,10 @@
 package com.homelauncher.app.ui.components
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -20,6 +22,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -29,6 +32,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -36,11 +42,15 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.homelauncher.app.AppInfo
+import com.homelauncher.app.media.MediaNotificationListener
+import com.homelauncher.app.media.NowPlayingState
+import com.homelauncher.app.model.AppCategory
 import com.homelauncher.app.model.WidgetType
 import com.homelauncher.app.model.brandColor
 import com.homelauncher.app.model.displayName
 import com.homelauncher.app.model.toComposeColor
 import com.homelauncher.app.ui.theme.LauncherPalette
+import com.homelauncher.app.widget.describeAppForWidget
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -73,21 +83,22 @@ fun HomeWidgetView(
         WidgetType.CLOCK -> ClockWidgetCard(palette, onClick, modifier, title, onLongClick, onDoubleClick)
         WidgetType.WEATHER -> WeatherWidgetCard(palette, onClick, modifier, title, onLongClick, onDoubleClick)
         WidgetType.APP_DRAWER -> AppDrawerWidgetCard(palette, onClick, modifier, title, onLongClick, onDoubleClick)
-        WidgetType.YOUTUBE -> MediaWidgetCard(
+        WidgetType.YOUTUBE -> LiveMediaWidgetCard(
             brand = Color(0xFFFF0000),
             glyph = "▶",
-            headline = title ?: "YouTube",
-            subtitle = "Watch · Subscribe",
+            fallbackHeadline = title ?: "YouTube",
+            fallbackSubtitle = "Watch · Subscribe",
+            packageFilter = listOf("com.google.android.youtube", "com.vanced.android.youtube"),
             onClick = onClick,
             onLongClick = onLongClick,
             modifier = modifier,
         )
-        WidgetType.POWERAMP -> MediaWidgetCard(
+        WidgetType.POWERAMP -> LiveMediaWidgetCard(
             brand = Color(0xFFF5A623),
             glyph = "♫",
-            headline = title ?: "Poweramp",
-            subtitle = "Now playing",
-            detail = "Local library",
+            fallbackHeadline = title ?: "Poweramp",
+            fallbackSubtitle = "Local library",
+            packageFilter = listOf("com.maxmpz.audioplayer"),
             onClick = onClick,
             onLongClick = onLongClick,
             modifier = modifier,
@@ -103,12 +114,12 @@ fun HomeWidgetView(
             onLongClick = onLongClick,
             modifier = modifier,
         )
-        WidgetType.SPOTIFY -> MediaWidgetCard(
+        WidgetType.SPOTIFY -> LiveMediaWidgetCard(
             brand = Color(0xFF1DB954),
             glyph = "♪",
-            headline = title ?: "Spotify",
-            subtitle = "Something Comforting",
-            detail = "Porter Robinson",
+            fallbackHeadline = title ?: "Spotify",
+            fallbackSubtitle = "Tap to open",
+            packageFilter = listOf("com.spotify.music"),
             onClick = onClick,
             onLongClick = onLongClick,
             modifier = modifier,
@@ -158,11 +169,26 @@ private fun BlankAppWidgetCard(
     onLongClick: (() -> Unit)? = null,
     onDoubleClick: (() -> Unit)? = null,
 ) {
+    val context = LocalContext.current
+    val meta = remember(app?.packageName) {
+        app?.let { describeAppForWidget(context, it.packageName) }
+    }
+    val categoryLabel = when (app?.category) {
+        AppCategory.MUSIC -> "Music"
+        AppCategory.VIDEO -> "Video"
+        AppCategory.GAME -> "Game"
+        AppCategory.SOCIAL -> "Social"
+        AppCategory.PRODUCTIVITY -> "Productivity"
+        AppCategory.NEWS -> "News"
+        AppCategory.MAPS -> "Maps"
+        AppCategory.IMAGE -> "Photos"
+        else -> "App"
+    }
     Column(
         modifier = modifier
             .fillMaxSize()
             .clip(RoundedCornerShape(16.dp))
-            .background(palette.surface.copy(alpha = 0.6f))
+            .background(palette.surface.copy(alpha = 0.72f))
             .then(
                 if (onDoubleClick != null) {
                     Modifier.pointerInput(Unit) {
@@ -181,10 +207,10 @@ private fun BlankAppWidgetCard(
         verticalArrangement = Arrangement.Center,
     ) {
         if (app != null) {
-            androidx.compose.foundation.Image(
+            Image(
                 bitmap = app.icon,
                 contentDescription = label,
-                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                contentScale = ContentScale.Crop,
                 modifier = Modifier
                     .size(40.dp)
                     .clip(CircleShape),
@@ -198,7 +224,25 @@ private fun BlankAppWidgetCard(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Text("Tap to open", color = palette.textSecondary, fontSize = 10.sp)
+            Text(
+                buildString {
+                    append(categoryLabel)
+                    if (!meta?.versionName.isNullOrBlank()) append(" · v${meta!!.versionName}")
+                },
+                color = palette.textSecondary,
+                fontSize = 10.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                when {
+                    meta?.hasNativeWidget == true -> "Native widget available"
+                    else -> "Tap to operate in widget"
+                },
+                color = palette.accent.copy(alpha = 0.9f),
+                fontSize = 10.sp,
+                maxLines = 1,
+            )
         } else {
             Text("+", color = palette.textSecondary, fontSize = 28.sp)
             Text("Choose app", color = palette.textSecondary, fontSize = 11.sp)
@@ -338,6 +382,109 @@ private fun AppDrawerWidgetCard(
             fontSize = 11.sp,
             modifier = Modifier.padding(top = 6.dp),
         )
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun LiveMediaWidgetCard(
+    brand: Color,
+    glyph: String,
+    fallbackHeadline: String,
+    fallbackSubtitle: String,
+    packageFilter: List<String>,
+    onClick: () -> Unit,
+    onLongClick: (() -> Unit)?,
+    modifier: Modifier = Modifier,
+    showProgress: Boolean = false,
+) {
+    val nowPlaying by MediaNotificationListener.state.collectAsState()
+    val matched = remember(nowPlaying, packageFilter) {
+        val pkg = nowPlaying.packageName.orEmpty()
+        nowPlaying.takeIf { state ->
+            state.hasTrack && packageFilter.any { pkg.equals(it, true) || pkg.startsWith("$it.") }
+        } ?: nowPlaying.takeIf { it.hasTrack && packageFilter.isEmpty() }
+    }
+    val headline = matched?.title?.takeIf { it.isNotBlank() } ?: fallbackHeadline
+    val subtitle = when {
+        matched?.artist?.isNotBlank() == true -> matched.artist
+        matched?.isPlaying == true -> "Now playing"
+        else -> fallbackSubtitle
+    }
+    val detail = matched?.appLabel
+    val progress = matched?.progress?.coerceIn(0.02f, 1f) ?: 0.0f
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .clip(RoundedCornerShape(18.dp))
+            .background(brand.copy(alpha = 0.92f))
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+            .padding(14.dp),
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(34.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(Color.White.copy(alpha = 0.2f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (matched?.artwork != null) {
+                    Image(
+                        bitmap = matched.artwork.asImageBitmap(),
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                } else {
+                    Text(glyph, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+            Spacer(modifier = Modifier.width(10.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    headline,
+                    color = Color.White,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(subtitle, color = Color.White.copy(0.85f), fontSize = 11.sp, maxLines = 1)
+                if (detail != null) {
+                    Text(detail, color = Color.White.copy(0.65f), fontSize = 10.sp, maxLines = 1)
+                }
+            }
+            if (matched != null) {
+                Text(
+                    if (matched.isPlaying) "⏸" else "▶",
+                    color = Color.White,
+                    fontSize = 16.sp,
+                    modifier = Modifier.clickable { MediaNotificationListener.playPause() },
+                )
+            }
+        }
+        if (showProgress) {
+            Spacer(modifier = Modifier.height(10.dp))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(3.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(Color.White.copy(0.3f)),
+            ) {
+                if (progress > 0f) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(progress)
+                            .height(3.dp)
+                            .background(Color.White),
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -517,6 +664,24 @@ private fun MusicPlayerWidgetCard(
     onLongClick: (() -> Unit)? = null,
     onDoubleClick: (() -> Unit)? = null,
 ) {
+    val nowPlaying by MediaNotificationListener.state.collectAsState()
+    val matched = remember(nowPlaying, app?.packageName) {
+        val pkg = nowPlaying.packageName
+        when {
+            app != null && pkg != null &&
+                (pkg.equals(app.packageName, true) || pkg.startsWith("${app.packageName}.")) -> nowPlaying
+            nowPlaying.hasTrack && (app == null || app.category == AppCategory.MUSIC) -> nowPlaying
+            else -> NowPlayingState.Empty
+        }
+    }
+    val headline = matched.title.takeIf { it.isNotBlank() } ?: title
+    val subtitle = when {
+        matched.artist.isNotBlank() -> matched.artist
+        matched.isPlaying -> "Music · Now playing"
+        else -> "Music · Tap to operate"
+    }
+    val progress = if (matched.hasTrack) matched.progress.coerceIn(0.02f, 1f) else 0.45f
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -527,11 +692,20 @@ private fun MusicPlayerWidgetCard(
         verticalArrangement = Arrangement.Center,
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            if (app != null) {
-                androidx.compose.foundation.Image(
+            if (matched.artwork != null) {
+                Image(
+                    bitmap = matched.artwork.asImageBitmap(),
+                    contentDescription = title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(RoundedCornerShape(10.dp)),
+                )
+            } else if (app != null) {
+                Image(
                     bitmap = app.icon,
                     contentDescription = title,
-                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                    contentScale = ContentScale.Crop,
                     modifier = Modifier
                         .size(40.dp)
                         .clip(RoundedCornerShape(10.dp)),
@@ -547,15 +721,31 @@ private fun MusicPlayerWidgetCard(
             }
             Spacer(modifier = Modifier.width(10.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(title, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text("Music · Now playing", color = Color.White.copy(0.85f), fontSize = 11.sp)
+                Text(headline, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(subtitle, color = Color.White.copy(0.85f), fontSize = 11.sp, maxLines = 1)
             }
         }
         Spacer(modifier = Modifier.height(8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("⏮", color = Color.White, fontSize = 14.sp)
-            Text("▶", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-            Text("⏭", color = Color.White, fontSize = 14.sp)
+            Text(
+                "⏮",
+                color = Color.White,
+                fontSize = 14.sp,
+                modifier = Modifier.clickable { MediaNotificationListener.skipPrevious() },
+            )
+            Text(
+                if (matched.isPlaying) "⏸" else "▶",
+                color = Color.White,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.clickable { MediaNotificationListener.playPause() },
+            )
+            Text(
+                "⏭",
+                color = Color.White,
+                fontSize = 14.sp,
+                modifier = Modifier.clickable { MediaNotificationListener.skipNext() },
+            )
             Box(
                 modifier = Modifier
                     .weight(1f)
@@ -565,7 +755,7 @@ private fun MusicPlayerWidgetCard(
             ) {
                 Box(
                     modifier = Modifier
-                        .fillMaxWidth(0.45f)
+                        .fillMaxWidth(progress)
                         .height(3.dp)
                         .background(Color.White),
                 )

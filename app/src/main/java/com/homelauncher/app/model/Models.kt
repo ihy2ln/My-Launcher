@@ -219,8 +219,16 @@ data class FloatingWidget(
     val appKey: String? = null,
     val linkedType: WidgetType? = null,
     val opacity: Float = 1f,
+    /** Bound Android AppWidget id, or [android.appwidget.AppWidgetManager.INVALID_APPWIDGET_ID]. */
+    val appWidgetId: Int = -1,
+    /** Flattened [android.content.ComponentName] of the hosted AppWidgetProvider. */
+    val providerFlat: String? = null,
 ) {
+    val hostsNativeWidget: Boolean
+        get() = appWidgetId != -1 && !providerFlat.isNullOrBlank()
+
     fun effectiveType(): WidgetType = when {
+        hostsNativeWidget -> WidgetType.BLANK
         type == WidgetType.BLANK && linkedType != null -> linkedType
         else -> type
     }

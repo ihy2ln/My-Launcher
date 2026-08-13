@@ -32,8 +32,10 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -43,11 +45,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.homelauncher.app.AppInfo
+import com.homelauncher.app.media.MediaNotificationListener
 import com.homelauncher.app.model.DrawerGroup
 import com.homelauncher.app.model.DrawerScroll
 import com.homelauncher.app.model.LauncherSettings
@@ -274,24 +278,61 @@ fun AppDrawer(
 
 @Composable
 private fun DrawerMediaCard(palette: LauncherPalette) {
+    val context = LocalContext.current
+    val nowPlaying by MediaNotificationListener.state.collectAsState()
+    val listenerOn by MediaNotificationListener.listenerEnabled.collectAsState()
+    val accessGranted = remember {
+        MediaNotificationListener.isNotificationAccessEnabled(context)
+    }
+    var accessKnown by remember { mutableStateOf(accessGranted) }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            accessKnown = MediaNotificationListener.isNotificationAccessEnabled(context)
+            if (accessKnown) MediaNotificationListener.refresh()
+            kotlinx.coroutines.delay(2_000)
+        }
+    }
+
+    val title = when {
+        nowPlaying.hasTrack -> nowPlaying.title.ifBlank { "Unknown track" }
+        accessKnown || listenerOn -> "Nothing playing"
+        else -> "Enable media access"
+    }
+    val artist = when {
+        nowPlaying.hasTrack -> nowPlaying.artist.ifBlank { nowPlaying.appLabel ?: "Unknown artist" }
+        accessKnown || listenerOn -> "Play music to see it here"
+        else -> "Notification access required"
+    }
+    val progress = if (nowPlaying.hasTrack) nowPlaying.progress.coerceIn(0.02f, 1f) else 0f
+    val accent = Color(0xFF1DB954)
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 4.dp)
             .clip(RoundedCornerShape(20.dp))
-            .background(Color(0xFF1DB954))
+            .background(accent)
             .padding(16.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("♪", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
             Spacer(modifier = Modifier.width(8.dp))
-            Text("Now playing", color = Color.White, fontWeight = FontWeight.SemiBold)
+            Text(
+                if (nowPlaying.isPlaying) "Now playing" else "Media",
+                color = Color.White,
+                fontWeight = FontWeight.SemiBold,
+            )
             Spacer(modifier = Modifier.weight(1f))
-            Text("Card", color = Color.White.copy(0.8f), fontSize = 12.sp)
+            Text(
+                nowPlaying.appLabel ?: "Card",
+                color = Color.White.copy(0.8f),
+                fontSize = 12.sp,
+            )
         }
         Spacer(modifier = Modifier.height(12.dp))
-        Text("Something Comforting", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-        Text("Porter Robinson", color = Color.White.copy(0.85f), fontSize = 13.sp)
+        Text(title, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+        Text(artist, color = Color.White.copy(0.85f), fontSize = 13.sp, maxLines = 1)
         Spacer(modifier = Modifier.height(10.dp))
         Box(
             modifier = Modifier
@@ -300,12 +341,14 @@ private fun DrawerMediaCard(palette: LauncherPalette) {
                 .clip(RoundedCornerShape(2.dp))
                 .background(Color.White.copy(0.35f)),
         ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth(0.42f)
-                    .height(4.dp)
-                    .background(Color.White),
-            )
+            if (progress > 0f) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(progress)
+                        .height(4.dp)
+                        .background(Color.White),
+                )
+            }
         }
         Spacer(modifier = Modifier.height(12.dp))
         Row(
@@ -313,14 +356,68 @@ private fun DrawerMediaCard(palette: LauncherPalette) {
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("Get suggestions", color = Color.White.copy(0.85f), fontSize = 12.sp)
+            Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (nowPlaying.hasTrack) {
+                    Text(
+                        "⏮",
+                        color = Color.White,
+                        fontSize = 16.sp,
+                        modifier = Modifier.clickable { MediaNotificationListener.skipPrevious() },
+                    )
+                    Text(
+                        if (nowPlaying.isPlaying) "⏸" else "▶",
+                        color = Color.White,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.clickable { MediaNotificationListener.playPause() },
+                    )
+                    Text(
+                        "⏭",
+                        color = Color.White,
+                        fontSize = 16.sp,
+                        modifier = Modifier.clickable { MediaNotificationListener.skipNext() },
+                    )
+                } else {
+                    Text(
+                        if (accessKnown) "Get suggestions" else "Grant access",
+                        color = Color.White.copy(0.85f),
+                        fontSize = 12.sp,
+                        modifier = Modifier.clickable {
+                            if (!accessKnown) {
+                                MediaNotificationListener.openNotificationAccessSettings(context)
+                            }
+                        },
+                    )
+                }
+            }
             Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(20.dp))
                     .background(Color.White)
+                    .clickable {
+                        when {
+                            nowPlaying.packageName != null -> {
+                                val launch = context.packageManager.getLaunchIntentForPackage(nowPlaying.packageName!!)
+                                if (launch != null) {
+                                    launch.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    context.startActivity(launch)
+                                }
+                            }
+                            !accessKnown -> MediaNotificationListener.openNotificationAccessSettings(context)
+                        }
+                    }
                     .padding(horizontal = 14.dp, vertical = 6.dp),
             ) {
-                Text("Open", color = Color(0xFF1DB954), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Text(
+                    when {
+                        nowPlaying.hasTrack -> "Open"
+                        accessKnown -> "Refresh"
+                        else -> "Enable"
+                    },
+                    color = accent,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                )
             }
         }
     }

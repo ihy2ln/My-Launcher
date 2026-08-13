@@ -192,14 +192,29 @@ class LauncherRepository(private val context: Context) {
     }
 
     suspend fun removeFloatingWidget(id: String) = mutateLayout { layout ->
+        val victim = layout.floatingWidgets.firstOrNull { it.id == id }
+        if (victim != null && victim.appWidgetId != -1) {
+            com.homelauncher.app.widget.LauncherAppWidgetHost.deleteId(context, victim.appWidgetId)
+        }
         layout.copy(floatingWidgets = layout.floatingWidgets.filterNot { it.id == id })
     }
 
-    suspend fun bindBlankWidget(widgetId: String, appKey: String, linkedType: WidgetType?) = mutateLayout { layout ->
+    suspend fun bindBlankWidget(
+        widgetId: String,
+        appKey: String,
+        linkedType: WidgetType?,
+        appWidgetId: Int = -1,
+        providerFlat: String? = null,
+    ) = mutateLayout { layout ->
         layout.copy(
             floatingWidgets = layout.floatingWidgets.map { widget ->
                 if (widget.id == widgetId) {
-                    widget.copy(appKey = appKey, linkedType = linkedType)
+                    widget.copy(
+                        appKey = appKey,
+                        linkedType = linkedType,
+                        appWidgetId = appWidgetId,
+                        providerFlat = providerFlat,
+                    )
                 } else widget
             },
         )
@@ -582,6 +597,8 @@ class LauncherRepository(private val context: Context) {
                     if (w.appKey != null) put("appKey", w.appKey)
                     if (w.linkedType != null) put("linkedType", w.linkedType.name)
                     put("opacity", w.opacity.toDouble())
+                    put("appWidgetId", w.appWidgetId)
+                    if (w.providerFlat != null) put("providerFlat", w.providerFlat)
                 })
             }
             return array.toString()
@@ -599,6 +616,7 @@ class LauncherRepository(private val context: Context) {
                         runCatching { WidgetType.valueOf(it) }.getOrNull()
                     }
                     val appKeyRaw = if (obj.has("appKey")) obj.optString("appKey") else ""
+                    val providerFlat = if (obj.has("providerFlat")) obj.optString("providerFlat") else ""
                     FloatingWidget(
                         id = obj.getString("id"),
                         type = type,
@@ -610,6 +628,8 @@ class LauncherRepository(private val context: Context) {
                         appKey = appKeyRaw.takeIf { it.isNotBlank() },
                         linkedType = linkedType,
                         opacity = obj.optDouble("opacity", 1.0).toFloat(),
+                        appWidgetId = obj.optInt("appWidgetId", -1),
+                        providerFlat = providerFlat.takeIf { it.isNotBlank() },
                     )
                 }
             } catch (_: Exception) {
