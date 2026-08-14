@@ -13,9 +13,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -64,15 +67,42 @@ fun FloatingWidgetsLayer(
             .zIndex(2f),
     ) {
         val density = LocalDensity.current
+        // Always derive from *current* constraints. Caching first-measure pixels
+        // was shrinking widgets when the home layout settled larger.
         val parentW = constraints.maxWidth.toFloat().coerceAtLeast(1f)
         val parentH = constraints.maxHeight.toFloat().coerceAtLeast(1f)
 
         widgets.forEach { widget ->
-            var dragX by remember(widget.id, widget.xFrac) { mutableStateOf(widget.xFrac * parentW) }
-            var dragY by remember(widget.id, widget.yFrac) { mutableStateOf(widget.yFrac * parentH) }
-            var widthPx by remember(widget.id, widget.widthFrac) { mutableStateOf(widget.widthFrac * parentW) }
-            var heightPx by remember(widget.id, widget.heightFrac) { mutableStateOf(widget.heightFrac * parentH) }
-            var moving by remember(widget.id) { mutableStateOf(false) }
+            var interacting by remember(widget.id) { mutableStateOf(false) }
+            var dragX by remember(widget.id) { mutableFloatStateOf(widget.xFrac * parentW) }
+            var dragY by remember(widget.id) { mutableFloatStateOf(widget.yFrac * parentH) }
+            var widthPx by remember(widget.id) { mutableFloatStateOf(widget.widthFrac * parentW) }
+            var heightPx by remember(widget.id) { mutableFloatStateOf(widget.heightFrac * parentH) }
+
+            // Re-sync whenever the model or parent size changes (unless mid-gesture).
+            LaunchedEffect(
+                widget.id,
+                widget.xFrac,
+                widget.yFrac,
+                widget.widthFrac,
+                widget.heightFrac,
+                parentW,
+                parentH,
+                interacting,
+            ) {
+                if (!interacting) {
+                    val w = widget.widthFrac.coerceIn(MIN_WIDTH_FRAC, MAX_WIDTH_FRAC) * parentW
+                    val h = widget.heightFrac.coerceIn(MIN_HEIGHT_FRAC, MAX_HEIGHT_FRAC) * parentH
+                    widthPx = w
+                    heightPx = h
+                    dragX = (widget.xFrac * parentW).coerceIn(0f, (parentW - w).coerceAtLeast(0f))
+                    dragY = (widget.yFrac * parentH).coerceIn(0f, (parentH - h).coerceAtLeast(0f))
+                }
+            }
+
+            val latestParentW by rememberUpdatedState(parentW)
+            val latestParentH by rememberUpdatedState(parentH)
+            val latestWidget by rememberUpdatedState(widget)
 
             val wDp = with(density) { widthPx.toDp() }
             val hDp = with(density) { heightPx.toDp() }
@@ -90,7 +120,7 @@ fun FloatingWidgetsLayer(
                     .size(wDp, hDp)
                     .alpha(widget.opacity.coerceIn(0.15f, 1f))
                     .then(
-                        if (editable || moving) {
+                        if (editable || interacting) {
                             Modifier.border(1.dp, palette.accent.copy(0.7f), RoundedCornerShape(16.dp))
                         } else {
                             Modifier
@@ -102,31 +132,37 @@ fun FloatingWidgetsLayer(
                                 .pointerInput(widget.id, editable, allowMove) {
                                     detectDragGesturesAfterLongPress(
                                         onDragStart = {
-                                            moving = true
-                                            onLongPress(widget)
+                                            interacting = true
+                                            onLongPress(latestWidget)
                                         },
                                         onDragEnd = {
-                                            moving = false
+                                            val pw = latestParentW
+                                            val ph = latestParentH
                                             onMove(
-                                                widget,
-                                                (dragX / parentW).coerceIn(0f, 0.92f),
-                                                (dragY / parentH).coerceIn(0f, 0.92f),
+                                                latestWidget,
+                                                (dragX / pw).coerceIn(0f, 0.92f),
+                                                (dragY / ph).coerceIn(0f, 0.92f),
                                             )
+                                            interacting = false
                                         },
-                                        onDragCancel = { moving = false },
+                                        onDragCancel = { interacting = false },
                                     ) { change, dragAmount ->
                                         change.consume()
-                                        dragX = (dragX + dragAmount.x).coerceIn(0f, parentW - widthPx)
-                                        dragY = (dragY + dragAmount.y).coerceIn(0f, parentH - heightPx)
+                                        val pw = latestParentW
+                                        val ph = latestParentH
+                                        dragX = (dragX + dragAmount.x)
+                                            .coerceIn(0f, (pw - widthPx).coerceAtLeast(0f))
+                                        dragY = (dragY + dragAmount.y)
+                                            .coerceIn(0f, (ph - heightPx).coerceAtLeast(0f))
                                     }
                                 }
                                 .pointerInput(widget.id, editable) {
                                     detectTapGestures(
                                         onTap = {
-                                            if (!moving && !editable) onClick(widget)
+                                            if (!interacting && !editable) onClick(latestWidget)
                                         },
                                         onDoubleTap = {
-                                            if (editable) onDoubleTap(widget)
+                                            if (editable) onDoubleTap(latestWidget)
                                         },
                                     )
                                 }
@@ -157,10 +193,9 @@ fun FloatingWidgetsLayer(
                         title = displayLabel,
                         app = boundApp,
                         appLabel = displayLabel,
-                        onClick = { if (!editable && !moving) onClick(widget) },
+                        onClick = { if (!editable && !interacting) onClick(widget) },
                         onLongClick = null,
                         onDoubleClick = null,
-                        // Outer box owns gestures whenever move/edit is enabled.
                         enableGestures = !allowMove && !editable,
                         modifier = Modifier.fillMaxSize(),
                     )
@@ -170,30 +205,44 @@ fun FloatingWidgetsLayer(
                     Box(
                         modifier = Modifier
                             .align(Alignment.BottomEnd)
-                            .size(22.dp)
+                            .size(28.dp)
                             .clip(RoundedCornerShape(topStart = 8.dp))
                             .background(palette.accent)
                             .pointerInput(widget.id) {
                                 detectDragGestures(
+                                    onDragStart = { interacting = true },
                                     onDragEnd = {
+                                        val pw = latestParentW
+                                        val ph = latestParentH
                                         onResize(
-                                            widget,
-                                            (widthPx / parentW).coerceIn(0.15f, 0.95f),
-                                            (heightPx / parentH).coerceIn(0.08f, 0.6f),
+                                            latestWidget,
+                                            (widthPx / pw).coerceIn(MIN_WIDTH_FRAC, MAX_WIDTH_FRAC),
+                                            (heightPx / ph).coerceIn(MIN_HEIGHT_FRAC, MAX_HEIGHT_FRAC),
                                         )
+                                        interacting = false
                                     },
+                                    onDragCancel = { interacting = false },
                                 ) { change, dragAmount ->
                                     change.consume()
-                                    widthPx = (widthPx + dragAmount.x).coerceIn(parentW * 0.15f, parentW * 0.95f)
-                                    heightPx = (heightPx + dragAmount.y).coerceIn(parentH * 0.08f, parentH * 0.6f)
+                                    val pw = latestParentW
+                                    val ph = latestParentH
+                                    widthPx = (widthPx + dragAmount.x)
+                                        .coerceIn(pw * MIN_WIDTH_FRAC, pw * MAX_WIDTH_FRAC)
+                                    heightPx = (heightPx + dragAmount.y)
+                                        .coerceIn(ph * MIN_HEIGHT_FRAC, ph * MAX_HEIGHT_FRAC)
                                 }
                             },
                         contentAlignment = Alignment.Center,
                     ) {
-                        Text("⤡", color = Color.Black, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        Text("⤡", color = Color.Black, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }
         }
     }
 }
+
+private const val MIN_WIDTH_FRAC = 0.22f
+private const val MAX_WIDTH_FRAC = 0.95f
+private const val MIN_HEIGHT_FRAC = 0.12f
+private const val MAX_HEIGHT_FRAC = 0.72f

@@ -646,8 +646,12 @@ class LauncherRepository(private val context: Context) {
                         title = obj.optString("title"),
                         xFrac = obj.optDouble("xFrac", 0.08).toFloat(),
                         yFrac = obj.optDouble("yFrac", 0.22).toFloat(),
-                        widthFrac = obj.optDouble("widthFrac", 0.42).toFloat(),
-                        heightFrac = obj.optDouble("heightFrac", 0.16).toFloat(),
+                        widthFrac = obj.optDouble("widthFrac", 0.55).toFloat().let { raw ->
+                            if (raw < 0.18f) 0.55f else raw.coerceIn(0.22f, 0.95f)
+                        },
+                        heightFrac = obj.optDouble("heightFrac", 0.20).toFloat().let { raw ->
+                            if (raw < 0.10f) 0.20f else raw.coerceIn(0.12f, 0.72f)
+                        },
                         appKey = appKeyRaw.takeIf { it.isNotBlank() },
                         linkedType = linkedType,
                         opacity = obj.optDouble("opacity", 1.0).toFloat(),

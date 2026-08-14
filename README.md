@@ -2,7 +2,7 @@
 
 A modern Nova/Lawnchair-inspired Android home screen launcher built with Kotlin and Jetpack Compose.
 
-## Features (v0.12.0)
+## Features (v0.12.1)
 
 - **Multi-page home** — swipeable pages with scroll effects, configurable grid & dock
 - **Floating widgets** — blank/native AppWidgets, clock, live weather, music/video/game, search, calendar, notes
@@ -19,7 +19,7 @@ A modern Nova/Lawnchair-inspired Android home screen launcher built with Kotlin 
 
 Download the latest APK from the [Releases](https://github.com/ihy2ln/My-Launcher/releases) page.
 
-1. Install **HomeLauncher-v0.12.0.apk**
+1. Install **HomeLauncher-v0.12.1.apk**
 2. Press **Home** → choose **Home Launcher** → **Always**
 3. Grant **Notification access** for live media cards and badges
 4. (Optional) Grant **Usage access** for Suggested apps; **Location** for local weather

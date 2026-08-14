@@ -3,6 +3,9 @@ package com.homelauncher.app.widget
 import android.appwidget.AppWidgetHostView
 import android.appwidget.AppWidgetManager
 import android.content.ComponentName
+import android.os.Build
+import android.os.Bundle
+import android.util.SizeF
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import androidx.compose.foundation.layout.Box
@@ -11,11 +14,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 
 /**
- * Renders a bound Android AppWidget inside Compose.
+ * Renders a bound Android AppWidget inside Compose and keeps the provider
+ * informed of the real host size so widgets do not stay stuck at min size.
  */
 @Composable
 fun NativeAppWidgetView(
@@ -36,7 +41,13 @@ fun NativeAppWidgetView(
     }
 
     AndroidView(
-        modifier = modifier.fillMaxSize(),
+        modifier = modifier
+            .fillMaxSize()
+            .onSizeChanged { size ->
+                if (size.width > 0 && size.height > 0) {
+                    updateAppWidgetHostSize(context, appWidgetId, size.width, size.height)
+                }
+            },
         factory = { ctx ->
             val info = LauncherAppWidgetHost.providerInfo(ctx, appWidgetId)
                 ?: provider?.let { LauncherAppWidgetHost.providerInfo(ctx, it) }
@@ -54,8 +65,43 @@ fun NativeAppWidgetView(
             if (info != null) {
                 hostView.setAppWidget(appWidgetId, info)
             }
+            val w = hostView.width
+            val h = hostView.height
+            if (w > 0 && h > 0) {
+                updateAppWidgetHostSize(hostView.context, appWidgetId, w, h, hostView)
+            }
         },
     )
+}
+
+fun updateAppWidgetHostSize(
+    context: android.content.Context,
+    appWidgetId: Int,
+    widthPx: Int,
+    heightPx: Int,
+    hostView: AppWidgetHostView? = null,
+) {
+    if (widthPx <= 0 || heightPx <= 0) return
+    val density = context.resources.displayMetrics.density.coerceAtLeast(0.1f)
+    val widthDp = (widthPx / density).toInt().coerceAtLeast(1)
+    val heightDp = (heightPx / density).toInt().coerceAtLeast(1)
+    val options = Bundle().apply {
+        putInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, widthDp)
+        putInt(AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH, widthDp)
+        putInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, heightDp)
+        putInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, heightDp)
+    }
+    runCatching {
+        AppWidgetManager.getInstance(context).updateAppWidgetOptions(appWidgetId, options)
+    }
+    if (hostView != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        runCatching {
+            hostView.updateAppWidgetSize(
+                options,
+                listOf(SizeF(widthDp.toFloat(), heightDp.toFloat())),
+            )
+        }
+    }
 }
 
 fun bindNativeWidgetForPackage(

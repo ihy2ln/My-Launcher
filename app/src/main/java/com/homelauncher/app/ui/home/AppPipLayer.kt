@@ -28,6 +28,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -102,12 +103,35 @@ fun HomePipLayer(
         val context = LocalContext.current
 
         sessions.forEach { session ->
-            var x by remember(session.id, session.xFrac) { mutableStateOf(session.xFrac * parentW) }
-            var y by remember(session.id, session.yFrac) { mutableStateOf(session.yFrac * parentH) }
-            var w by remember(session.id, session.widthFrac) { mutableStateOf(session.widthFrac * parentW) }
-            var h by remember(session.id, session.heightFrac) { mutableStateOf(session.heightFrac * parentH) }
+            var interacting by remember(session.id) { mutableStateOf(false) }
+            var x by remember(session.id) { mutableStateOf(session.xFrac * parentW) }
+            var y by remember(session.id) { mutableStateOf(session.yFrac * parentH) }
+            var w by remember(session.id) { mutableStateOf(session.widthFrac * parentW) }
+            var h by remember(session.id) { mutableStateOf(session.heightFrac * parentH) }
             var localAppWidgetId by remember(session.id) { mutableStateOf(session.appWidgetId) }
             var localProvider by remember(session.id) { mutableStateOf(session.providerFlat) }
+
+            LaunchedEffect(
+                session.id,
+                session.xFrac,
+                session.yFrac,
+                session.widthFrac,
+                session.heightFrac,
+                parentW,
+                parentH,
+                interacting,
+            ) {
+                if (!interacting) {
+                    w = session.widthFrac.coerceIn(0.35f, 0.95f) * parentW
+                    h = session.heightFrac.coerceIn(0.22f, 0.75f) * parentH
+                    x = (session.xFrac * parentW).coerceIn(0f, (parentW - w).coerceAtLeast(0f))
+                    y = (session.yFrac * parentH).coerceIn(0f, (parentH - h).coerceAtLeast(0f))
+                }
+            }
+
+            val latestParentW by rememberUpdatedState(parentW)
+            val latestParentH by rememberUpdatedState(parentH)
+            val latestSession by rememberUpdatedState(session)
 
             var freeformHint by remember(session.id) { mutableStateOf<String?>(null) }
             LaunchedEffect(session.id) {
@@ -171,20 +195,27 @@ fun HomePipLayer(
                         .background(brand.copy(alpha = 0.92f))
                         .pointerInput(session.id) {
                             detectDragGestures(
+                                onDragStart = { interacting = true },
                                 onDragEnd = {
+                                    val pw = latestParentW
+                                    val ph = latestParentH
                                     onUpdateBounds(
-                                        session.copy(
-                                            xFrac = (x / parentW).coerceIn(0f, 0.85f),
-                                            yFrac = (y / parentH).coerceIn(0f, 0.85f),
-                                            widthFrac = (w / parentW).coerceIn(0.35f, 0.95f),
-                                            heightFrac = (h / parentH).coerceIn(0.22f, 0.75f),
+                                        latestSession.copy(
+                                            xFrac = (x / pw).coerceIn(0f, 0.85f),
+                                            yFrac = (y / ph).coerceIn(0f, 0.85f),
+                                            widthFrac = (w / pw).coerceIn(0.35f, 0.95f),
+                                            heightFrac = (h / ph).coerceIn(0.22f, 0.75f),
                                         ),
                                     )
+                                    interacting = false
                                 },
+                                onDragCancel = { interacting = false },
                             ) { change, amount ->
                                 change.consume()
-                                x = (x + amount.x).coerceIn(0f, parentW - w)
-                                y = (y + amount.y).coerceIn(0f, parentH - h)
+                                val pw = latestParentW
+                                val ph = latestParentH
+                                x = (x + amount.x).coerceIn(0f, (pw - w).coerceAtLeast(0f))
+                                y = (y + amount.y).coerceIn(0f, (ph - h).coerceAtLeast(0f))
                             }
                         }
                         .padding(horizontal = 10.dp, vertical = 6.dp),
@@ -293,20 +324,27 @@ fun HomePipLayer(
                             .size(28.dp)
                             .pointerInput(session.id) {
                                 detectDragGestures(
+                                    onDragStart = { interacting = true },
                                     onDragEnd = {
+                                        val pw = latestParentW
+                                        val ph = latestParentH
                                         onUpdateBounds(
-                                            session.copy(
-                                                xFrac = (x / parentW).coerceIn(0f, 0.85f),
-                                                yFrac = (y / parentH).coerceIn(0f, 0.85f),
-                                                widthFrac = (w / parentW).coerceIn(0.35f, 0.95f),
-                                                heightFrac = (h / parentH).coerceIn(0.22f, 0.75f),
+                                            latestSession.copy(
+                                                xFrac = (x / pw).coerceIn(0f, 0.85f),
+                                                yFrac = (y / ph).coerceIn(0f, 0.85f),
+                                                widthFrac = (w / pw).coerceIn(0.35f, 0.95f),
+                                                heightFrac = (h / ph).coerceIn(0.22f, 0.75f),
                                             ),
                                         )
+                                        interacting = false
                                     },
+                                    onDragCancel = { interacting = false },
                                 ) { change, amount ->
                                     change.consume()
-                                    w = (w + amount.x).coerceIn(parentW * 0.35f, parentW * 0.95f)
-                                    h = (h + amount.y).coerceIn(parentH * 0.22f, parentH * 0.75f)
+                                    val pw = latestParentW
+                                    val ph = latestParentH
+                                    w = (w + amount.x).coerceIn(pw * 0.35f, pw * 0.95f)
+                                    h = (h + amount.y).coerceIn(ph * 0.22f, ph * 0.75f)
                                 }
                             },
                         contentAlignment = Alignment.Center,

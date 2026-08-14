@@ -235,6 +235,21 @@ fun HomeLauncherApp() {
             val widget = layout.floatingWidgets.firstOrNull { it.id == widgetId }
             if (widget != null) {
                 val hostsNative = appWidgetId != -1 && !providerFlat.isNullOrBlank()
+                // Never shrink an existing widget on bind — only grow to a usable minimum.
+                val minW = when {
+                    hostsNative -> 0.55f
+                    linked == WidgetType.VIDEO || linked == WidgetType.YOUTUBE || linked == WidgetType.TWITCH -> 0.58f
+                    linked == WidgetType.MUSIC || linked == WidgetType.SPOTIFY || linked == WidgetType.POWERAMP -> 0.55f
+                    linked == WidgetType.GAME -> 0.42f
+                    else -> 0.42f
+                }
+                val minH = when {
+                    hostsNative -> 0.28f
+                    linked == WidgetType.VIDEO || linked == WidgetType.YOUTUBE -> 0.22f
+                    linked == WidgetType.MUSIC || linked == WidgetType.SPOTIFY || linked == WidgetType.POWERAMP -> 0.18f
+                    linked == WidgetType.GAME -> 0.18f
+                    else -> 0.16f
+                }
                 repository.updateFloatingWidget(
                     widget.copy(
                         appKey = app.key,
@@ -242,20 +257,8 @@ fun HomeLauncherApp() {
                         title = app.label,
                         appWidgetId = appWidgetId,
                         providerFlat = providerFlat,
-                        widthFrac = when {
-                            hostsNative -> 0.55f
-                            linked == WidgetType.VIDEO || linked == WidgetType.YOUTUBE || linked == WidgetType.TWITCH -> 0.58f
-                            linked == WidgetType.MUSIC || linked == WidgetType.SPOTIFY || linked == WidgetType.POWERAMP -> 0.55f
-                            linked == WidgetType.GAME -> 0.4f
-                            else -> widget.widthFrac
-                        },
-                        heightFrac = when {
-                            hostsNative -> 0.22f
-                            linked == WidgetType.VIDEO || linked == WidgetType.YOUTUBE -> 0.18f
-                            linked == WidgetType.MUSIC || linked == WidgetType.SPOTIFY || linked == WidgetType.POWERAMP -> 0.16f
-                            linked == WidgetType.GAME -> 0.16f
-                            else -> widget.heightFrac
-                        },
+                        widthFrac = widget.widthFrac.coerceAtLeast(minW).coerceIn(0.22f, 0.95f),
+                        heightFrac = widget.heightFrac.coerceAtLeast(minH).coerceIn(0.12f, 0.72f),
                     ),
                 )
             } else {

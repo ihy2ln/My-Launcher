@@ -218,8 +218,8 @@ data class FloatingWidget(
     val title: String = "",
     val xFrac: Float = 0.08f,
     val yFrac: Float = 0.22f,
-    val widthFrac: Float = 0.42f,
-    val heightFrac: Float = 0.16f,
+    val widthFrac: Float = 0.55f,
+    val heightFrac: Float = 0.20f,
     val appKey: String? = null,
     val linkedType: WidgetType? = null,
     val opacity: Float = 1f,
@@ -244,59 +244,59 @@ data class FloatingWidget(
             return when (type) {
                 WidgetType.BLANK -> FloatingWidget(
                     id = id, type = type, title = type.displayName(),
-                    xFrac = 0.1f, yFrac = 0.26f + stagger, widthFrac = 0.45f, heightFrac = 0.16f,
+                    xFrac = 0.08f, yFrac = 0.24f + stagger, widthFrac = 0.55f, heightFrac = 0.22f,
                 )
                 WidgetType.CLOCK -> FloatingWidget(
                     id = id, type = type, title = type.displayName(),
-                    xFrac = 0.08f, yFrac = 0.18f + stagger, widthFrac = 0.55f, heightFrac = 0.14f,
+                    xFrac = 0.08f, yFrac = 0.16f + stagger, widthFrac = 0.62f, heightFrac = 0.18f,
                 )
                 WidgetType.WEATHER -> FloatingWidget(
                     id = id, type = type, title = type.displayName(),
-                    xFrac = 0.1f, yFrac = 0.34f + stagger, widthFrac = 0.4f, heightFrac = 0.16f,
+                    xFrac = 0.1f, yFrac = 0.34f + stagger, widthFrac = 0.5f, heightFrac = 0.2f,
                 )
                 WidgetType.APP_DRAWER -> FloatingWidget(
                     id = id, type = type, title = type.displayName(),
-                    xFrac = 0.35f, yFrac = 0.52f + stagger, widthFrac = 0.28f, heightFrac = 0.12f,
+                    xFrac = 0.32f, yFrac = 0.5f + stagger, widthFrac = 0.36f, heightFrac = 0.14f,
                 )
                 WidgetType.YOUTUBE -> FloatingWidget(
                     id = id, type = type, title = type.displayName(),
-                    xFrac = 0.08f, yFrac = 0.28f + stagger, widthFrac = 0.5f, heightFrac = 0.14f,
+                    xFrac = 0.08f, yFrac = 0.26f + stagger, widthFrac = 0.62f, heightFrac = 0.2f,
                 )
                 WidgetType.POWERAMP -> FloatingWidget(
                     id = id, type = type, title = type.displayName(),
-                    xFrac = 0.08f, yFrac = 0.44f + stagger, widthFrac = 0.55f, heightFrac = 0.15f,
+                    xFrac = 0.08f, yFrac = 0.42f + stagger, widthFrac = 0.62f, heightFrac = 0.2f,
                 )
                 WidgetType.TWITCH -> FloatingWidget(
                     id = id, type = type, title = type.displayName(),
-                    xFrac = 0.12f, yFrac = 0.36f + stagger, widthFrac = 0.48f, heightFrac = 0.14f,
+                    xFrac = 0.1f, yFrac = 0.34f + stagger, widthFrac = 0.58f, heightFrac = 0.2f,
                 )
                 WidgetType.SPOTIFY -> FloatingWidget(
                     id = id, type = type, title = type.displayName(),
-                    xFrac = 0.1f, yFrac = 0.4f + stagger, widthFrac = 0.52f, heightFrac = 0.15f,
+                    xFrac = 0.08f, yFrac = 0.4f + stagger, widthFrac = 0.62f, heightFrac = 0.2f,
                 )
                 WidgetType.MUSIC -> FloatingWidget(
                     id = id, type = type, title = type.displayName(),
-                    xFrac = 0.08f, yFrac = 0.42f + stagger, widthFrac = 0.55f, heightFrac = 0.16f,
+                    xFrac = 0.08f, yFrac = 0.4f + stagger, widthFrac = 0.62f, heightFrac = 0.2f,
                 )
                 WidgetType.VIDEO -> FloatingWidget(
                     id = id, type = type, title = type.displayName(),
-                    xFrac = 0.1f, yFrac = 0.3f + stagger, widthFrac = 0.58f, heightFrac = 0.18f,
+                    xFrac = 0.08f, yFrac = 0.28f + stagger, widthFrac = 0.7f, heightFrac = 0.24f,
                 )
                 WidgetType.GAME -> FloatingWidget(
                     id = id, type = type, title = type.displayName(),
-                    xFrac = 0.2f, yFrac = 0.36f + stagger, widthFrac = 0.4f, heightFrac = 0.16f,
+                    xFrac = 0.16f, yFrac = 0.34f + stagger, widthFrac = 0.5f, heightFrac = 0.2f,
                 )
                 WidgetType.SEARCH -> FloatingWidget(
                     id = id, type = type, title = type.displayName(),
-                    xFrac = 0.1f, yFrac = 0.2f + stagger, widthFrac = 0.8f, heightFrac = 0.08f,
+                    xFrac = 0.08f, yFrac = 0.18f + stagger, widthFrac = 0.84f, heightFrac = 0.12f,
                 )
                 WidgetType.CALENDAR -> FloatingWidget(
                     id = id, type = type, title = type.displayName(),
-                    xFrac = 0.55f, yFrac = 0.3f + stagger, widthFrac = 0.35f, heightFrac = 0.16f,
+                    xFrac = 0.5f, yFrac = 0.28f + stagger, widthFrac = 0.42f, heightFrac = 0.2f,
                 )
                 WidgetType.NOTES -> FloatingWidget(
                     id = id, type = type, title = type.displayName(),
-                    xFrac = 0.55f, yFrac = 0.48f + stagger, widthFrac = 0.35f, heightFrac = 0.14f,
+                    xFrac = 0.5f, yFrac = 0.48f + stagger, widthFrac = 0.42f, heightFrac = 0.18f,
                 )
             }
         }
