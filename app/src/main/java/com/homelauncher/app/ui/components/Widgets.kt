@@ -41,6 +41,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.runtime.produceState
+import androidx.compose.ui.platform.LocalContext
 import com.homelauncher.app.AppInfo
 import com.homelauncher.app.media.MediaNotificationListener
 import com.homelauncher.app.media.NowPlayingState
@@ -55,7 +57,6 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
-import kotlin.random.Random
 
 @Composable
 fun HomeWidgetView(
@@ -332,9 +333,11 @@ private fun WeatherWidgetCard(
     onLongClick: (() -> Unit)? = null,
     onDoubleClick: (() -> Unit)? = null,
 ) {
-    val temp = remember { 64 + Random.nextInt(0, 12) }
-    val condition = remember {
-        listOf("Clear", "Cloudy", "Breezy", "Sunny").random()
+    val context = LocalContext.current
+    val weather by produceState<com.homelauncher.app.data.WeatherSnapshot?>(initialValue = null, context) {
+        value = runCatching {
+            com.homelauncher.app.data.WeatherRepository.current(context)
+        }.getOrNull()
     }
 
     Column(
@@ -347,9 +350,21 @@ private fun WeatherWidgetCard(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Text("$temp°", color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Medium)
-        Text(condition, color = Color.White.copy(0.85f), fontSize = 12.sp)
-        Text(title ?: "Weather", color = Color.White.copy(0.65f), fontSize = 10.sp)
+        if (weather == null) {
+            Text("…", color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Medium)
+            Text("Loading", color = Color.White.copy(0.85f), fontSize = 12.sp)
+        } else {
+            Text("${weather!!.tempF}°", color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Medium)
+            Text(weather!!.condition, color = Color.White.copy(0.85f), fontSize = 12.sp)
+            Text(
+                if (weather!!.isLive) weather!!.locationLabel else "Offline",
+                color = Color.White.copy(0.65f),
+                fontSize = 10.sp,
+            )
+        }
+        if (!title.isNullOrBlank()) {
+            Text(title, color = Color.White.copy(0.55f), fontSize = 9.sp)
+        }
     }
 }
 

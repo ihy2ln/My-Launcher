@@ -109,6 +109,7 @@ fun HomePipLayer(
             var localAppWidgetId by remember(session.id) { mutableStateOf(session.appWidgetId) }
             var localProvider by remember(session.id) { mutableStateOf(session.providerFlat) }
 
+            var freeformHint by remember(session.id) { mutableStateOf<String?>(null) }
             LaunchedEffect(session.id) {
                 // Prefer hosting a native AppWidget inside the PiP frame.
                 if (localAppWidgetId == -1) {
@@ -120,18 +121,16 @@ fun HomePipLayer(
                             outcome.configureIntent?.let { runCatching { context.startActivity(it) } }
                         }
                         is NativeBindOutcome.NeedsUserConsent -> {
-                            // Keep interactive fallback; user can bind later from edit home.
                             LauncherAppWidgetHost.deleteId(context, outcome.appWidgetId)
                         }
                         NativeBindOutcome.NoProvider -> Unit
                     }
                 }
-                // Also try freeform launch into the frame so the real app sits over home.
+                // Try freeform into the frame — never force a fullscreen takeover.
                 val bounds = densityScaledRect(
                     x / parentW, y / parentH, w / parentW, h / parentH,
                     parentW.toInt(), parentH.toInt(),
                 )
-                // Offset below status / chrome
                 val chromePx = with(density) { 36.dp.roundToPx() }
                 val contentBounds = Rect(
                     bounds.left,
@@ -139,12 +138,17 @@ fun HomePipLayer(
                     bounds.right,
                     bounds.bottom,
                 )
-                launchAppInBounds(
+                val result = launchAppInBounds(
                     context,
                     session.app.packageName,
                     session.app.activityName,
                     contentBounds,
                 )
+                freeformHint = when {
+                    result.usedFreeform -> null
+                    result.launched -> "Opened beside home"
+                    else -> "In-frame mode · freeform unavailable"
+                }
             }
 
             val brand = Color(brandColorForPackage(session.app.packageName))

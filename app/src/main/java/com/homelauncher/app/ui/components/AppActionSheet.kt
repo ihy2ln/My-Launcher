@@ -35,6 +35,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.homelauncher.app.AppInfo
+import com.homelauncher.app.AppShortcutItem
 import com.homelauncher.app.model.IconShape
 import com.homelauncher.app.ui.theme.iconShape
 import com.homelauncher.app.ui.theme.LauncherPalette
@@ -56,6 +57,8 @@ fun AppActionSheet(
     onLauncherSettings: () -> Unit,
     onRename: () -> Unit = {},
     showRemove: Boolean = true,
+    shortcuts: List<AppShortcutItem> = emptyList(),
+    onShortcut: (AppShortcutItem) -> Unit = {},
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -89,6 +92,20 @@ fun AppActionSheet(
                 )
             }
 
+            if (shortcuts.isNotEmpty()) {
+                shortcuts.forEach { shortcut ->
+                    ShortcutRow(
+                        shortcut = shortcut,
+                        iconShape = iconShape,
+                        onClick = { onShortcut(shortcut) },
+                    )
+                }
+                HorizontalDivider(
+                    modifier = Modifier.padding(vertical = 6.dp),
+                    color = Color.White.copy(alpha = 0.12f),
+                )
+            }
+
             ActionRow(SheetIcon.Open, "Open", "Launch ${app.label}", onOpen)
             ActionRow(SheetIcon.Favorite, "Favorite", "Pin to favorites / dock", onFavorite)
             ActionRow(SheetIcon.Info, "App info", "System application details", onAppInfo)
@@ -114,6 +131,40 @@ fun AppActionSheet(
 
 private enum class SheetIcon {
     Open, Favorite, Info, Category, Folder, Remove, Uninstall, Settings
+}
+
+@Composable
+private fun ShortcutRow(
+    shortcut: AppShortcutItem,
+    iconShape: IconShape,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .clickable(onClick = onClick)
+            .padding(vertical = 12.dp, horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (shortcut.icon != null) {
+            Image(
+                bitmap = shortcut.icon,
+                contentDescription = shortcut.label,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .size(24.dp)
+                    .clip(iconShape(iconShape)),
+            )
+        } else {
+            SheetGlyph(SheetIcon.Open)
+        }
+        Spacer(modifier = Modifier.width(14.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(shortcut.label, color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Medium)
+            Text("App shortcut", color = Color.White.copy(0.45f), fontSize = 12.sp)
+        }
+    }
 }
 
 @Composable

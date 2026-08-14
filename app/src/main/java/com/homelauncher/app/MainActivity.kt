@@ -38,6 +38,7 @@ import androidx.compose.material3.TextField
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -50,14 +51,20 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import com.homelauncher.app.data.LauncherRepository
+import com.homelauncher.app.data.RecentAppsRepository
 import com.homelauncher.app.findApp
 import com.homelauncher.app.launchApp
 import com.homelauncher.app.launchPackageOrUrl
+import com.homelauncher.app.loadAppShortcuts
 import com.homelauncher.app.loadInstalledApps
 import com.homelauncher.app.media.MediaNotificationListener
+import com.homelauncher.app.media.NotificationBadges
 import com.homelauncher.app.model.DrawerGroup
 import com.homelauncher.app.model.FloatingWidget
 import com.homelauncher.app.model.FolderInfo
@@ -65,8 +72,10 @@ import com.homelauncher.app.model.GestureAction
 import com.homelauncher.app.model.HomeSlot
 import com.homelauncher.app.model.LauncherSettings
 import com.homelauncher.app.model.defaultLayout
+import com.homelauncher.app.model.homeCapacity
 import com.homelauncher.app.model.launchPackages
 import com.homelauncher.app.model.webFallback
+import com.homelauncher.app.startAppShortcut
 import com.homelauncher.app.ui.components.AppActionSheet
 import com.homelauncher.app.ui.components.AppIconView
 import com.homelauncher.app.ui.components.openAppInfo
@@ -134,7 +143,7 @@ fun HomeLauncherApp() {
 
     val settings by repository.settings.collectAsState(initial = LauncherSettings())
     val layout by repository.layout.collectAsState(
-        initial = defaultLayout(settings.homeColumns * settings.homeRows, settings.dockSlots),
+        initial = defaultLayout(settings.homeCapacity(), settings.dockSlots),
     )
 
     var overlay by remember { mutableStateOf<Overlay>(Overlay.None) }
@@ -164,8 +173,47 @@ fun HomeLauncherApp() {
     var mediaAccessPrompt by remember { mutableStateOf(false) }
     var pipSessions by remember { mutableStateOf<List<com.homelauncher.app.ui.home.HomePipSession>>(emptyList()) }
 
-    val apps by produceState(initialValue = emptyList<AppInfo>(), context) {
-        value = withContext(Dispatchers.Default) { loadInstalledApps(context) }
+    var apps by remember { mutableStateOf(emptyList<AppInfo>()) }
+    LaunchedEffect(Unit) {
+        apps = withContext(Dispatchers.Default) { loadInstalledApps(context) }
+        AppsChangedBus.events.collect {
+            apps = withContext(Dispatchers.Default) { loadInstalledApps(context) }
+        }
+    }
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                scope.launch {
+                    apps = withContext(Dispatchers.Default) { loadInstalledApps(context) }
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    var previousOverlay by remember { mutableStateOf<Overlay>(Overlay.None) }
+    LaunchedEffect(overlay) {
+        if (previousOverlay != Overlay.None && overlay == Overlay.None) {
+            apps = withContext(Dispatchers.Default) { loadInstalledApps(context) }
+        }
+        previousOverlay = overlay
+    }
+
+    val badgeCounts by NotificationBadges.counts.collectAsState(emptyMap())
+    val effectiveBadges = if (settings.showNotificationBadges) badgeCounts else emptyMap()
+
+    val suggested by produceState(emptyList<AppInfo>(), apps, settings.showSuggestedApps) {
+        if (!settings.showSuggestedApps) {
+            value = emptyList()
+            return@produceState
+        }
+        val pkgs = RecentAppsRepository.recentPackageNames(context)
+        value = pkgs.mapNotNull { pkg -> apps.firstOrNull { it.packageName == pkg } }
+            .distinctBy { it.key }
+            .take(8)
     }
 
     DisposableEffect(Unit) {
@@ -398,6 +446,8 @@ fun HomeLauncherApp() {
                     onFloatingWidgetResize = { widget, w, h ->
                         scope.launch { repository.updateFloatingWidget(widget.copy(widthFrac = w, heightFrac = h)) }
                     },
+                    onAppLongPress = { index, app -> appActionTarget = index to app },
+                    badgeCounts = effectiveBadges,
                 )
 
                 if (overlay == Overlay.EditHome) {
@@ -477,6 +527,8 @@ fun HomeLauncherApp() {
                         selectionMode = folderAddTarget != null || groupPickTarget != null,
                         selectedKeys = multiSelectKeys,
                         appAliases = layout.appAliases,
+                        suggestedApps = suggested,
+                        badgeCounts = effectiveBadges,
                         onToggleSelect = { app ->
                             multiSelectKeys = if (app.key in multiSelectKeys) {
                                 multiSelectKeys - app.key
@@ -822,7 +874,10 @@ fun HomeLauncherApp() {
         }
 
         appActionTarget?.let { (index, app) ->
+            val fromDock = index < 0
+            val homeIndex = if (fromDock) -1 else index
             val folders = layout.folders.values.toList()
+            val shortcuts = remember(app.packageName) { loadAppShortcuts(context, app.packageName) }
             AppActionSheet(
                 app = app,
                 palette = palette,
@@ -833,9 +888,11 @@ fun HomeLauncherApp() {
                     launchApp(context, app)
                 },
                 onFavorite = {
-                    scope.launch {
-                        val dockIndex = layout.dockSlots.indexOfFirst { it == null }
-                        if (dockIndex >= 0) repository.setDockSlot(dockIndex, HomeSlot.App(app.key))
+                    if (!fromDock) {
+                        scope.launch {
+                            val dockIndex = layout.dockSlots.indexOfFirst { it == null }
+                            if (dockIndex >= 0) repository.setDockSlot(dockIndex, HomeSlot.App(app.key))
+                        }
                     }
                     appActionTarget = null
                 },
@@ -852,12 +909,23 @@ fun HomeLauncherApp() {
                 },
                 onMoveToFolder = {
                     appActionTarget = null
-                    if (folders.isEmpty()) {
+                    if (fromDock) {
                         scope.launch {
-                            repository.createFolder(app.label, listOf(app.key), index)
+                            if (folders.isEmpty()) {
+                                val empty = layout.homeSlots.indexOfFirst { it == null }
+                                if (empty >= 0) {
+                                    repository.createFolder(app.label, listOf(app.key), empty)
+                                }
+                            } else {
+                                moveToFolderApp = index to app
+                            }
+                        }
+                    } else if (folders.isEmpty()) {
+                        scope.launch {
+                            repository.createFolder(app.label, listOf(app.key), homeIndex)
                         }
                     } else {
-                        moveToFolderApp = index to app
+                        moveToFolderApp = homeIndex to app
                     }
                 },
                 onAppInfo = {
@@ -870,13 +938,20 @@ fun HomeLauncherApp() {
                 },
                 onRemoveFromHome = {
                     appActionTarget = null
-                    removeTarget = PlacementTarget.Home(index)
+                    if (!fromDock) {
+                        removeTarget = PlacementTarget.Home(homeIndex)
+                    }
                 },
                 onLauncherSettings = {
                     appActionTarget = null
                     overlay = Overlay.Settings
                 },
-                showRemove = true,
+                showRemove = !fromDock,
+                shortcuts = shortcuts,
+                onShortcut = {
+                    startAppShortcut(context, it)
+                    appActionTarget = null
+                },
             )
         }
 
@@ -974,6 +1049,7 @@ fun HomeLauncherApp() {
 
         moveToFolderApp?.let { (index, app) ->
             val folders = layout.folders.values.toList()
+            val fromDock = index < 0
             AlertDialog(
                 onDismissRequest = { moveToFolderApp = null },
                 title = { Text("Move ${app.label}") },
@@ -983,11 +1059,21 @@ fun HomeLauncherApp() {
                         folders.forEach { folder ->
                             TextButton(onClick = {
                                 scope.launch {
-                                    repository.moveAppIntoFolder(index, folder.id)
-                                    moveToFolderApp = null
-                                    openFolder = layout.folders[folder.id]?.copy(
-                                        appKeys = (folder.appKeys + app.key).distinct(),
-                                    ) ?: folder.copy(appKeys = folder.appKeys + app.key)
+                                    if (fromDock) {
+                                        repository.updateFolder(
+                                            folder.copy(appKeys = (folder.appKeys + app.key).distinct()),
+                                        )
+                                        moveToFolderApp = null
+                                        openFolder = folder.copy(
+                                            appKeys = (folder.appKeys + app.key).distinct(),
+                                        )
+                                    } else {
+                                        repository.moveAppIntoFolder(index, folder.id)
+                                        moveToFolderApp = null
+                                        openFolder = layout.folders[folder.id]?.copy(
+                                            appKeys = (folder.appKeys + app.key).distinct(),
+                                        ) ?: folder.copy(appKeys = folder.appKeys + app.key)
+                                    }
                                 }
                             }) { Text(folder.title) }
                         }
@@ -996,7 +1082,14 @@ fun HomeLauncherApp() {
                 confirmButton = {
                     TextButton(onClick = {
                         scope.launch {
-                            repository.createFolder("Folder", listOf(app.key), index)
+                            if (fromDock) {
+                                val empty = layout.homeSlots.indexOfFirst { it == null }
+                                if (empty >= 0) {
+                                    repository.createFolder("Folder", listOf(app.key), empty)
+                                }
+                            } else {
+                                repository.createFolder("Folder", listOf(app.key), index)
+                            }
                             moveToFolderApp = null
                         }
                     }) { Text("New folder here") }

@@ -1,16 +1,20 @@
 package com.homelauncher.app.ui.theme
 
+import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.dynamicDarkColorScheme
+import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.homelauncher.app.model.IconShape
 import com.homelauncher.app.model.LauncherSettings
@@ -31,13 +35,18 @@ data class LauncherPalette(
 
 @Composable
 fun rememberPalette(settings: LauncherSettings): LauncherPalette {
+    val context = LocalContext.current
     val systemDark = isSystemInDarkTheme()
     val isDark = when (settings.themeMode) {
         ThemeMode.SYSTEM -> systemDark
         ThemeMode.LIGHT -> false
         ThemeMode.DARK -> true
     }
-    val accent = settings.accentColor.toComposeColor()
+    val dynamicAccent = if (settings.useMaterialYou && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        val scheme = if (isDark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+        scheme.primary
+    } else null
+    val accent = dynamicAccent ?: settings.accentColor.toComposeColor()
     val wallpapers = listOf(
         listOf(Color(0xFF1A237E), Color(0xFF4527A0), Color(0xFF880E4F)),
         listOf(Color(0xFF0D47A1), Color(0xFF1565C0), Color(0xFF26C6DA)),
@@ -47,7 +56,7 @@ fun rememberPalette(settings: LauncherSettings): LauncherPalette {
         listOf(Color(0xFFFFF8E1), Color(0xFFFFE082), Color(0xFFFFB300)),
     )
     val colors = wallpapers[settings.wallpaperStyle.coerceIn(wallpapers.indices)]
-    return remember(settings, isDark) {
+    return remember(settings, isDark, accent) {
         LauncherPalette(
             isDark = isDark,
             accent = accent,
@@ -71,8 +80,11 @@ fun iconShape(shape: IconShape): Shape = when (shape) {
 
 @Composable
 fun HomeLauncherTheme(settings: LauncherSettings, content: @Composable () -> Unit) {
+    val context = LocalContext.current
     val palette = rememberPalette(settings)
-    val scheme = if (palette.isDark) {
+    val scheme = if (settings.useMaterialYou && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        if (palette.isDark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+    } else if (palette.isDark) {
         darkColorScheme(primary = palette.accent, background = palette.drawerBackground, surface = palette.surface)
     } else {
         lightColorScheme(primary = palette.accent, background = palette.drawerBackground, surface = palette.surface)

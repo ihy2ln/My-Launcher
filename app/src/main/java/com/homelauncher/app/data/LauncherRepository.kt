@@ -25,6 +25,7 @@ import com.homelauncher.app.model.WallpaperMode
 import com.homelauncher.app.model.WidgetType
 import com.homelauncher.app.model.DrawerGroup
 import com.homelauncher.app.model.DrawerScroll
+import com.homelauncher.app.model.homeCapacity
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import org.json.JSONArray
@@ -38,7 +39,7 @@ class LauncherRepository(private val context: Context) {
 
     val layout: Flow<LauncherLayout> = context.launcherDataStore.data.map { prefs ->
         val s = prefs.toSettings()
-        val decoded = decodeSlots(prefs[Keys.HOME_SLOTS], s.homeColumns * s.homeRows)
+        val decoded = decodeSlots(prefs[Keys.HOME_SLOTS], s.homeCapacity())
         val migrated = migrateGridWidgets(
             homeSlots = decoded,
             existing = decodeFloatingWidgets(prefs[Keys.FLOATING_WIDGETS]),
@@ -60,9 +61,9 @@ class LauncherRepository(private val context: Context) {
             val current = prefs.toSettings()
             val next = transform(current)
             writeSettings(prefs, next)
-            val home = decodeSlots(prefs[Keys.HOME_SLOTS], current.homeColumns * current.homeRows)
+            val home = decodeSlots(prefs[Keys.HOME_SLOTS], current.homeCapacity())
             val dock = decodeSlots(prefs[Keys.DOCK_SLOTS_DATA], current.dockSlots)
-            prefs[Keys.HOME_SLOTS] = encodeSlots(resizeSlots(home, next.homeColumns * next.homeRows))
+            prefs[Keys.HOME_SLOTS] = encodeSlots(resizeSlots(home, next.homeCapacity()))
             prefs[Keys.DOCK_SLOTS_DATA] = encodeSlots(resizeSlots(dock, next.dockSlots))
         }
     }
@@ -238,6 +239,7 @@ class LauncherRepository(private val context: Context) {
                 put("labelColor", s.labelColor)
                 put("homeColumns", s.homeColumns)
                 put("homeRows", s.homeRows)
+                put("homePages", s.homePages)
                 put("dockSlots", s.dockSlots)
                 put("dockBackgroundAlpha", s.dockBackgroundAlpha.toDouble())
                 put("drawerColumns", s.drawerColumns)
@@ -245,6 +247,8 @@ class LauncherRepository(private val context: Context) {
                 put("searchBarPosition", s.searchBarPosition.ordinal)
                 put("showDrawerCards", s.showDrawerCards)
                 put("showSuggestedApps", s.showSuggestedApps)
+                put("showAzScrubber", s.showAzScrubber)
+                put("showNotificationBadges", s.showNotificationBadges)
                 put("showAzScrubber", s.showAzScrubber)
                 put("wallpaperStyle", s.wallpaperStyle)
                 put("wallpaperMode", s.wallpaperMode.ordinal)
@@ -294,6 +298,7 @@ class LauncherRepository(private val context: Context) {
                     labelColor = settingsObj.optLong("labelColor", 0xFFFFFFFF),
                     homeColumns = settingsObj.optInt("homeColumns", 5),
                     homeRows = settingsObj.optInt("homeRows", 6),
+                    homePages = settingsObj.optInt("homePages", 1).coerceIn(1, 5),
                     dockSlots = settingsObj.optInt("dockSlots", 6),
                     dockBackgroundAlpha = settingsObj.optDouble("dockBackgroundAlpha", 0.45).toFloat(),
                     drawerColumns = settingsObj.optInt("drawerColumns", 4),
@@ -301,6 +306,8 @@ class LauncherRepository(private val context: Context) {
                     searchBarPosition = SearchBarPosition.entries.getOrElse(settingsObj.optInt("searchBarPosition", 0)) { SearchBarPosition.TOP },
                     showDrawerCards = settingsObj.optBoolean("showDrawerCards", true),
                     showSuggestedApps = settingsObj.optBoolean("showSuggestedApps", true),
+                    showAzScrubber = settingsObj.optBoolean("showAzScrubber", true),
+                    showNotificationBadges = settingsObj.optBoolean("showNotificationBadges", true),
                     showAzScrubber = settingsObj.optBoolean("showAzScrubber", true),
                     wallpaperStyle = settingsObj.optInt("wallpaperStyle", 4),
                     wallpaperMode = WallpaperMode.entries.getOrElse(settingsObj.optInt("wallpaperMode", WallpaperMode.COLOR.ordinal)) { WallpaperMode.COLOR },
@@ -329,7 +336,7 @@ class LauncherRepository(private val context: Context) {
     private suspend fun mutateLayout(transform: (LauncherLayout) -> LauncherLayout) {
         context.launcherDataStore.edit { prefs ->
             val s = prefs.toSettings()
-            val decoded = decodeSlots(prefs[Keys.HOME_SLOTS], s.homeColumns * s.homeRows)
+            val decoded = decodeSlots(prefs[Keys.HOME_SLOTS], s.homeCapacity())
             val migrated = migrateGridWidgets(
                 homeSlots = decoded,
                 existing = decodeFloatingWidgets(prefs[Keys.FLOATING_WIDGETS]),
@@ -373,6 +380,8 @@ class LauncherRepository(private val context: Context) {
         val DRAWER_SCROLL = intPreferencesKey("drawer_scroll")
         val SEARCH_POS = intPreferencesKey("search_pos")
         val SHOW_DRAWER_CARDS = booleanPreferencesKey("show_drawer_cards")
+        val HOME_PAGES = intPreferencesKey("home_pages")
+        val SHOW_BADGES = booleanPreferencesKey("show_notification_badges")
         val SHOW_SUGGESTED = booleanPreferencesKey("show_suggested_apps")
         val SHOW_AZ = booleanPreferencesKey("show_az_scrubber")
         val WALLPAPER = intPreferencesKey("wallpaper")
@@ -408,6 +417,7 @@ class LauncherRepository(private val context: Context) {
             labelColor = this[Keys.LABEL_COLOR] ?: 0xFFFFFFFF,
             homeColumns = this[Keys.HOME_COLS] ?: 5,
             homeRows = this[Keys.HOME_ROWS] ?: 6,
+            homePages = (this[Keys.HOME_PAGES] ?: 1).coerceIn(1, 5),
             dockSlots = this[Keys.DOCK_SLOTS] ?: 6,
             dockBackgroundAlpha = this[Keys.DOCK_ALPHA] ?: 0.45f,
             drawerColumns = this[Keys.DRAWER_COLS] ?: 4,
@@ -415,6 +425,8 @@ class LauncherRepository(private val context: Context) {
             searchBarPosition = SearchBarPosition.entries.getOrElse(this[Keys.SEARCH_POS] ?: 0) { SearchBarPosition.TOP },
             showDrawerCards = this[Keys.SHOW_DRAWER_CARDS] ?: true,
             showSuggestedApps = this[Keys.SHOW_SUGGESTED] ?: true,
+            showAzScrubber = this[Keys.SHOW_AZ] ?: true,
+            showNotificationBadges = this[Keys.SHOW_BADGES] ?: true,
             showAzScrubber = this[Keys.SHOW_AZ] ?: true,
             wallpaperStyle = this[Keys.WALLPAPER] ?: 4,
             wallpaperMode = WallpaperMode.entries.getOrElse(this[Keys.WALLPAPER_MODE] ?: WallpaperMode.COLOR.ordinal) { WallpaperMode.COLOR },
@@ -440,6 +452,7 @@ class LauncherRepository(private val context: Context) {
             prefs[Keys.LABEL_COLOR] = s.labelColor
             prefs[Keys.HOME_COLS] = s.homeColumns
             prefs[Keys.HOME_ROWS] = s.homeRows
+            prefs[Keys.HOME_PAGES] = s.homePages.coerceIn(1, 5)
             prefs[Keys.DOCK_SLOTS] = s.dockSlots
             prefs[Keys.DOCK_ALPHA] = s.dockBackgroundAlpha
             prefs[Keys.DRAWER_COLS] = s.drawerColumns
@@ -447,6 +460,8 @@ class LauncherRepository(private val context: Context) {
             prefs[Keys.SEARCH_POS] = s.searchBarPosition.ordinal
             prefs[Keys.SHOW_DRAWER_CARDS] = s.showDrawerCards
             prefs[Keys.SHOW_SUGGESTED] = s.showSuggestedApps
+            prefs[Keys.SHOW_AZ] = s.showAzScrubber
+            prefs[Keys.SHOW_BADGES] = s.showNotificationBadges
             prefs[Keys.SHOW_AZ] = s.showAzScrubber
             prefs[Keys.WALLPAPER] = s.wallpaperStyle
             prefs[Keys.WALLPAPER_MODE] = s.wallpaperMode.ordinal

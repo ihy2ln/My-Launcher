@@ -319,7 +319,8 @@ fun HomeScreen(
                 palette = palette,
                 onLaunch = onLaunch,
                 onEmptySlot = onEmptyDockSlot,
-                onAppLongPress = { index, app -> onAppLongPress(index, app) },
+                // Negative indices distinguish dock slots from home grid indices.
+                onAppLongPress = { index, app -> onAppLongPress(-(index + 1), app) },
                 badgeCounts = badgeCounts,
             )
 

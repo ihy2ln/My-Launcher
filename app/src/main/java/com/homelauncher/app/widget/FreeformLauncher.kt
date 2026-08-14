@@ -11,18 +11,18 @@ import android.util.Log
 private const val TAG = "FreeformLaunch"
 private const val WINDOWING_MODE_FREEFORM = 5
 
-/**
- * Launch [packageName] into a freeform / bounded window matching [bounds]
- * so it can sit over the home screen like a PiP frame.
- *
- * Returns true if a launch was attempted successfully.
- */
+data class LaunchBoundsResult(
+    val launched: Boolean,
+    val usedFreeform: Boolean,
+    val message: String? = null,
+)
+
 fun launchAppInBounds(
     context: Context,
     packageName: String,
     activityName: String?,
     bounds: Rect,
-): Boolean {
+): LaunchBoundsResult {
     val pm = context.packageManager
     val intent = if (!activityName.isNullOrBlank()) {
         Intent(Intent.ACTION_MAIN).apply {
@@ -31,7 +31,7 @@ fun launchAppInBounds(
         }
     } else {
         pm.getLaunchIntentForPackage(packageName)
-    } ?: return false
+    } ?: return LaunchBoundsResult(false, false, "No launch activity")
 
     intent.addFlags(
         Intent.FLAG_ACTIVITY_NEW_TASK or
@@ -40,13 +40,14 @@ fun launchAppInBounds(
     )
 
     val options = ActivityOptions.makeBasic()
+    var freeform = false
     try {
-        // Prefer freeform windowing when the platform exposes it.
         val method = ActivityOptions::class.java.getMethod(
             "setLaunchWindowingMode",
             Int::class.javaPrimitiveType,
         )
         method.invoke(options, WINDOWING_MODE_FREEFORM)
+        freeform = true
     } catch (t: Throwable) {
         Log.d(TAG, "setLaunchWindowingMode unavailable: ${t.message}")
     }
@@ -57,14 +58,10 @@ fun launchAppInBounds(
 
     return try {
         context.startActivity(intent, options.toBundle())
-        true
+        LaunchBoundsResult(true, freeform)
     } catch (t: Throwable) {
-        Log.w(TAG, "Bounded launch failed, falling back", t)
-        runCatching {
-            intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
-            context.startActivity(intent)
-            true
-        }.getOrDefault(false)
+        Log.w(TAG, "Bounded launch failed — staying in-frame", t)
+        LaunchBoundsResult(false, false, t.message)
     }
 }
 

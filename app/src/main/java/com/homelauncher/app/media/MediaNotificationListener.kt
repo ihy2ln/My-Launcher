@@ -40,6 +40,7 @@ class MediaNotificationListener : NotificationListenerService() {
         val cn = ComponentName(this, MediaNotificationListener::class.java)
         msm.addOnActiveSessionsChangedListener(sessionListener, cn)
         bindControllers(msm.getActiveSessions(cn))
+        refreshBadges()
     }
 
     override fun onListenerDisconnected() {
@@ -53,10 +54,32 @@ class MediaNotificationListener : NotificationListenerService() {
         _sessions.value = emptyList()
         _state.value = NowPlayingState.Empty
         _listenerEnabled.value = false
+        NotificationBadges.clear()
     }
 
-    override fun onNotificationPosted(sbn: StatusBarNotification?) = refreshSessions()
-    override fun onNotificationRemoved(sbn: StatusBarNotification?) = refreshSessions()
+    override fun onNotificationPosted(sbn: StatusBarNotification?) {
+        refreshSessions()
+        refreshBadges()
+    }
+
+    override fun onNotificationRemoved(sbn: StatusBarNotification?) {
+        refreshSessions()
+        refreshBadges()
+    }
+
+    private fun refreshBadges() {
+        val active = runCatching { activeNotifications?.toList().orEmpty() }.getOrDefault(emptyList())
+        val counts = active
+            .filter { !it.isOngoing }
+            .groupBy { it.packageName }
+            .mapValues { (_, list) ->
+                list.sumOf { sbn ->
+                    val n = sbn.notification.number
+                    if (n > 0) n else 1
+                }
+            }
+        NotificationBadges.update(counts)
+    }
 
     fun refreshSessions() {
         val msm = getSystemService(MediaSessionManager::class.java) ?: return

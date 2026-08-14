@@ -32,7 +32,7 @@ fun loadInstalledApps(context: Context): List<AppInfo> {
         .map { resolveInfo ->
             val packageName = resolveInfo.activityInfo.packageName
             val drawable = resolveInfo.loadIcon(packageManager)
-            val icon = drawable.toBitmap(width = 192, height = 192).asImageBitmap()
+            val icon = drawable.toBitmap(width = 144, height = 144).asImageBitmap()
             AppInfo(
                 label = resolveInfo.loadLabel(packageManager).toString(),
                 packageName = packageName,
