@@ -173,6 +173,8 @@ data class LauncherSettings(
     val drawerScroll: DrawerScroll = DrawerScroll.VERTICAL,
     val searchBarPosition: SearchBarPosition = SearchBarPosition.TOP,
     val showDrawerCards: Boolean = true,
+    val showSuggestedApps: Boolean = true,
+    val showAzScrubber: Boolean = true,
     val wallpaperStyle: Int = 4,
     val wallpaperMode: WallpaperMode = WallpaperMode.COLOR,
     val wallpaperColor: Long = 0xFF3A4F50,
