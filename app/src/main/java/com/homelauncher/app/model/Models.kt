@@ -167,6 +167,7 @@ data class LauncherSettings(
     val labelColor: Long = 0xFFFFFFFF,
     val homeColumns: Int = 5,
     val homeRows: Int = 6,
+    val homePages: Int = 1,
     val dockSlots: Int = 6,
     val dockBackgroundAlpha: Float = 0.45f,
     val drawerColumns: Int = 5,
@@ -316,6 +317,9 @@ sealed class HomeSlot {
     /** Legacy grid widget — migrated to [FloatingWidget] on load. */
     data class Widget(val type: WidgetType, val id: String = "w_${type.name.lowercase()}") : HomeSlot()
 }
+
+fun LauncherSettings.homeCapacity(): Int =
+    homeColumns * homeRows * homePages.coerceAtLeast(1)
 
 fun defaultLayout(homeSize: Int, dockSize: Int) = LauncherLayout(
     homeSlots = List(homeSize) { null },

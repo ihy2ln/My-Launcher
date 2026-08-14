@@ -13,8 +13,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -32,6 +34,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -44,6 +47,7 @@ import com.homelauncher.app.model.toComposeColor
 import com.homelauncher.app.ui.theme.iconShape
 import com.homelauncher.app.ui.theme.LauncherPalette
 import kotlin.math.hypot
+import kotlin.math.min
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -62,6 +66,7 @@ fun AppIconView(
     size: Dp = settings.iconSizeDp.dp,
     labelOverride: String? = null,
     selected: Boolean = false,
+    badgeCount: Int = 0,
 ) {
     var originInRoot by remember { mutableStateOf(Offset.Zero) }
     var dragDistance by remember { mutableFloatStateOf(0f) }
@@ -113,26 +118,47 @@ fun AppIconView(
             ),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Image(
-            bitmap = app.icon,
-            contentDescription = labelOverride ?: app.label,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier
-                .size(size)
-                .clip(iconShape(settings.iconShape))
-                .then(
-                    if (selected) {
-                        Modifier.background(palette.accent.copy(alpha = 0.35f))
-                    } else {
-                        Modifier
-                    },
-                )
-                .border(
-                    width = if (selected) 2.dp else 0.dp,
-                    color = if (selected) palette.accent else Color.Transparent,
-                    shape = iconShape(settings.iconShape),
-                ),
-        )
+        Box {
+            Image(
+                bitmap = app.icon,
+                contentDescription = labelOverride ?: app.label,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .size(size)
+                    .clip(iconShape(settings.iconShape))
+                    .then(
+                        if (selected) {
+                            Modifier.background(palette.accent.copy(alpha = 0.35f))
+                        } else {
+                            Modifier
+                        },
+                    )
+                    .border(
+                        width = if (selected) 2.dp else 0.dp,
+                        color = if (selected) palette.accent else Color.Transparent,
+                        shape = iconShape(settings.iconShape),
+                    ),
+            )
+            if (badgeCount > 0) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .offset(x = 2.dp, y = (-2).dp)
+                        .size(18.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFFE53935)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = min(badgeCount, 99).toString(),
+                        color = Color.White,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                    )
+                }
+            }
+        }
         if (showLabel) {
             Text(
                 text = labelOverride ?: app.label,

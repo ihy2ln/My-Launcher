@@ -1,9 +1,7 @@
 package com.homelauncher.app.ui.home
 
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
@@ -14,23 +12,22 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -38,14 +35,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.boundsInRoot
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
@@ -57,20 +50,22 @@ import com.homelauncher.app.model.HomeSlot
 import com.homelauncher.app.model.LauncherLayout
 import com.homelauncher.app.model.LauncherSettings
 import com.homelauncher.app.model.ModuleStyle
+import com.homelauncher.app.model.ScrollEffect
 import com.homelauncher.app.model.WallpaperMode
 import com.homelauncher.app.model.WidgetType
+import com.homelauncher.app.model.homeCapacity
 import com.homelauncher.app.ui.components.AppIconView
+import com.homelauncher.app.ui.components.EmptySlotView
 import com.homelauncher.app.ui.components.FolderIconView
 import com.homelauncher.app.ui.components.HomeWidgetView
 import com.homelauncher.app.ui.components.ModulePlate
 import com.homelauncher.app.ui.components.WallpaperBackdrop
 import com.homelauncher.app.ui.search.LauncherSearchBar
 import com.homelauncher.app.ui.theme.LauncherPalette
-import com.homelauncher.app.ui.theme.iconShape
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import kotlin.math.roundToInt
+import kotlin.math.abs
 
 data class HomeDragState(
     val fromIndex: Int,
@@ -78,6 +73,7 @@ data class HomeDragState(
     val position: Offset,
 )
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun HomeScreen(
     layout: LauncherLayout,
@@ -95,7 +91,13 @@ fun HomeScreen(
     onFloatingWidgetClick: (com.homelauncher.app.model.FloatingWidget) -> Unit = {},
     onFloatingWidgetMove: (com.homelauncher.app.model.FloatingWidget, Float, Float) -> Unit = { _, _, _ -> },
     onFloatingWidgetResize: (com.homelauncher.app.model.FloatingWidget, Float, Float) -> Unit = { _, _, _ -> },
+    onAppLongPress: (Int, AppInfo) -> Unit = { _, _ -> },
+    badgeCounts: Map<String, Int> = emptyMap(),
 ) {
+    // Touch homeCapacity so multi-page capacity stays wired to settings.
+    @Suppress("UNUSED_VARIABLE")
+    val capacity = settings.homeCapacity()
+
     var cumulativeDragY by remember { mutableStateOf(0f) }
     var homeSearchQuery by remember { mutableStateOf("") }
 
@@ -173,32 +175,125 @@ fun HomeScreen(
             ClockWidget(palette = palette, modifier = Modifier.padding(bottom = 8.dp))
 
             BoxWithConstraints(modifier = Modifier.weight(1f)) {
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(settings.homeColumns),
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(bottom = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    userScrollEnabled = false,
-                ) {
-                    items(layout.homeSlots.size) { index ->
-                        val slot = layout.homeSlots[index]
-                        HomeCell(
-                            slot = slot,
-                            style = layout.moduleStyles[index],
-                            defaultOpacity = settings.moduleOpacity,
-                            apps = apps,
-                            folders = layout.folders,
-                            settings = settings,
-                            palette = palette,
-                            showEmpty = false,
-                            appAliases = layout.appAliases,
-                            onLaunch = onLaunch,
-                            onOpenFolder = onOpenFolder,
-                            onWidgetClick = onWidgetClick,
-                            onEmpty = { onEditHome() },
-                            onLongPress = { onEditHome() },
-                        )
+                val pageSize = settings.homeColumns * settings.homeRows
+                val pageCount = settings.homePages.coerceAtLeast(1).coerceAtMost(5).coerceAtLeast(1).let { pages ->
+                    maxOf(pages, ((layout.homeSlots.size + pageSize - 1) / pageSize).coerceAtLeast(1))
+                }
+                val pagerState = rememberPagerState(pageCount = { pageCount })
+
+                Column(modifier = Modifier.fillMaxSize()) {
+                    HorizontalPager(
+                        state = pagerState,
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                    ) { page ->
+                        val pageOffset =
+                            (pagerState.currentPage - page) + pagerState.currentPageOffsetFraction
+                        LazyVerticalGrid(
+                            columns = GridCells.Fixed(settings.homeColumns),
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .graphicsLayer {
+                                    when (settings.scrollEffect) {
+                                        ScrollEffect.CUBE, ScrollEffect.REVOLVING_DOOR -> {
+                                            rotationY = pageOffset * -55f
+                                            cameraDistance = 12f * density
+                                            alpha = 1f - abs(pageOffset) * 0.35f
+                                            scaleX = 1f - abs(pageOffset) * 0.05f
+                                            scaleY = 1f - abs(pageOffset) * 0.05f
+                                        }
+                                        ScrollEffect.CARD_STACK -> {
+                                            val t = abs(pageOffset).coerceIn(0f, 1f)
+                                            scaleX = 1f - t * 0.12f
+                                            scaleY = 1f - t * 0.12f
+                                            alpha = 1f - t * 0.45f
+                                            translationY = t * 24f
+                                        }
+                                        ScrollEffect.TABLET -> {
+                                            val t = abs(pageOffset).coerceIn(0f, 1f)
+                                            scaleX = 1f - t * 0.08f
+                                            scaleY = 1f - t * 0.08f
+                                            alpha = 1f - t * 0.25f
+                                            translationX = pageOffset * size.width * 0.08f
+                                        }
+                                        ScrollEffect.SIMPLE -> {
+                                            alpha = 1f - abs(pageOffset) * 0.2f
+                                        }
+                                    }
+                                },
+                            contentPadding = PaddingValues(bottom = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            userScrollEnabled = false,
+                        ) {
+                            items(pageSize) { index ->
+                                val globalIndex = page * pageSize + index
+                                val slot = layout.homeSlots.getOrNull(globalIndex)
+                                val badge = when (slot) {
+                                    is HomeSlot.App -> {
+                                        val app = findApp(apps, slot.key)
+                                        if (app != null) {
+                                            badgeCounts[app.packageName]
+                                                ?: badgeCounts[app.key]
+                                                ?: 0
+                                        } else {
+                                            0
+                                        }
+                                    }
+                                    else -> 0
+                                }
+                                HomeCell(
+                                    slot = slot,
+                                    style = layout.moduleStyles[globalIndex],
+                                    defaultOpacity = settings.moduleOpacity,
+                                    apps = apps,
+                                    folders = layout.folders,
+                                    settings = settings,
+                                    palette = palette,
+                                    showEmpty = false,
+                                    appAliases = layout.appAliases,
+                                    badgeCount = badge,
+                                    onLaunch = onLaunch,
+                                    onOpenFolder = onOpenFolder,
+                                    onWidgetClick = onWidgetClick,
+                                    onEmpty = { onEditHome() },
+                                    onLongPress = {
+                                        val appSlot = slot as? HomeSlot.App
+                                        val app = appSlot?.let { findApp(apps, it.key) }
+                                        if (app != null) {
+                                            onAppLongPress(globalIndex, app)
+                                        } else {
+                                            onEditHome()
+                                        }
+                                    },
+                                )
+                            }
+                        }
+                    }
+
+                    if (pageCount > 1) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 4.dp, bottom = 6.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            repeat(pageCount) { i ->
+                                val selected = pagerState.currentPage == i
+                                Box(
+                                    modifier = Modifier
+                                        .padding(horizontal = 3.dp)
+                                        .size(if (selected) 8.dp else 6.dp)
+                                        .clip(CircleShape)
+                                        .background(
+                                            if (selected) Color.White
+                                            else Color.White.copy(alpha = 0.35f),
+                                        ),
+                                )
+                            }
+                        }
                     }
                 }
 
@@ -211,7 +306,7 @@ fun HomeScreen(
                     editable = false,
                     allowMove = true,
                     onClick = onFloatingWidgetClick,
-                    onLongPress = { onEditHome() },
+                    onLongPress = { },
                     onMove = onFloatingWidgetMove,
                     onResize = onFloatingWidgetResize,
                 )
@@ -224,6 +319,8 @@ fun HomeScreen(
                 palette = palette,
                 onLaunch = onLaunch,
                 onEmptySlot = onEmptyDockSlot,
+                onAppLongPress = { index, app -> onAppLongPress(index, app) },
+                badgeCounts = badgeCounts,
             )
 
             DrawerHint(palette)
@@ -243,6 +340,7 @@ fun HomeCell(
     showEmpty: Boolean,
     highlighted: Boolean = false,
     appAliases: Map<String, String> = emptyMap(),
+    badgeCount: Int = 0,
     onLaunch: (AppInfo) -> Unit,
     onOpenFolder: (FolderInfo) -> Unit,
     onWidgetClick: (WidgetType) -> Unit,
@@ -271,6 +369,7 @@ fun HomeCell(
                     onDragEnd = onDragEnd,
                     onDragCancel = onDragCancel,
                     labelOverride = appAliases[app.key],
+                    badgeCount = badgeCount,
                 )
             } else {
                 HomeEmptyCell(showEmpty = showEmpty, opacity = opacity, style = style, onEmpty = onEmpty)
@@ -387,6 +486,8 @@ fun DockBar(
     palette: LauncherPalette,
     onLaunch: (AppInfo) -> Unit,
     onEmptySlot: (Int) -> Unit,
+    onAppLongPress: (Int, AppInfo) -> Unit = { _, _ -> },
+    badgeCounts: Map<String, Int> = emptyMap(),
 ) {
     Row(
         modifier = Modifier
@@ -409,8 +510,18 @@ fun DockBar(
                                 settings = settings,
                                 palette = palette,
                                 onClick = { onLaunch(app) },
+                                onLongClick = { onAppLongPress(index, app) },
                                 showLabel = false,
                                 size = (settings.iconSizeDp - 4).dp,
+                                badgeCount = badgeCounts[app.packageName]
+                                    ?: badgeCounts[app.key]
+                                    ?: 0,
+                            )
+                        } else {
+                            EmptySlotView(
+                                size = (settings.iconSizeDp - 4).dp,
+                                palette = palette,
+                                onClick = { onEmptySlot(index) },
                             )
                         }
                     }
@@ -422,7 +533,13 @@ fun DockBar(
                             onClick = { },
                         )
                     }
-                    else -> { }
+                    else -> {
+                        EmptySlotView(
+                            size = (settings.iconSizeDp - 4).dp,
+                            palette = palette,
+                            onClick = { onEmptySlot(index) },
+                        )
+                    }
                 }
             }
         }
