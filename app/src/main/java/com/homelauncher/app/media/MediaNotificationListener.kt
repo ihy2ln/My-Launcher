@@ -160,6 +160,14 @@ class MediaNotificationListener : NotificationListenerService() {
         }.getOrNull()
         val artwork = meta?.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
             ?: meta?.getBitmap(MediaMetadata.METADATA_KEY_ART)
+            ?: meta?.getBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON)
+        val mediaUri = meta?.getString(MediaMetadata.METADATA_KEY_MEDIA_URI)
+            ?: meta?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)?.takeIf {
+                it.startsWith("content:") || it.startsWith("file:") || it.startsWith("http")
+            }
+        val artUri = meta?.getString(MediaMetadata.METADATA_KEY_ART_URI)
+            ?: meta?.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI)
+            ?: meta?.getString(MediaMetadata.METADATA_KEY_DISPLAY_ICON_URI)
         val duration = meta?.getLong(MediaMetadata.METADATA_KEY_DURATION) ?: 0L
         val position = playback?.position ?: 0L
         val actions = playback?.actions ?: 0L
@@ -184,6 +192,8 @@ class MediaNotificationListener : NotificationListenerService() {
             canSkip = (actions and PlaybackState.ACTION_SKIP_TO_NEXT) != 0L,
             canPrevious = (actions and PlaybackState.ACTION_SKIP_TO_PREVIOUS) != 0L,
             artwork = artwork,
+            mediaUri = mediaUri,
+            artUri = artUri,
             brandColor = brandColorForPackage(pkg),
         )
     }

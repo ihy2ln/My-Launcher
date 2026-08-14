@@ -242,7 +242,8 @@ private fun BlankAppWidgetCard(
             )
             Text(
                 when {
-                    meta?.hasNativeWidget == true -> "Native widget available"
+                    meta?.hasNativeWidget == true ->
+                        "Official widget: ${meta.preferredLabel ?: "available"}"
                     else -> "Tap to operate in widget"
                 },
                 color = palette.accent.copy(alpha = 0.9f),
@@ -795,62 +796,123 @@ private fun VideoPlayerWidgetCard(
     onLongClick: (() -> Unit)? = null,
     onDoubleClick: (() -> Unit)? = null,
 ) {
+    val sessions by MediaNotificationListener.sessions.collectAsState()
+    val matched = remember(sessions, app?.packageName) {
+        val pkg = app?.packageName
+        sessions.firstOrNull { session ->
+            val sp = session.packageName.orEmpty()
+            when {
+                pkg != null && (sp.equals(pkg, true) || sp.startsWith("$pkg.")) -> true
+                pkg == null && session.hasTrack -> true
+                else -> false
+            }
+        } ?: sessions.firstOrNull { it.hasTrack && it.isPlaying }
+    }
+    val brand = Color(matched?.brandColor ?: 0xFF1A237E)
+    val headline = matched?.title?.takeIf { it.isNotBlank() } ?: title
+    val subtitle = when {
+        matched?.artist?.isNotBlank() == true -> matched.artist
+        matched?.isPlaying == true -> "Playing in widget"
+        matched != null -> "Paused"
+        else -> "Video · tap to open"
+    }
+    val progress = matched?.progress?.coerceIn(0.02f, 1f) ?: 0f
+    val playableUri = matched?.mediaUri
+
     Box(
         modifier = modifier
             .fillMaxSize()
             .clip(RoundedCornerShape(16.dp))
-            .background(Color(0xFF1A237E))
+            .background(brand)
             .widgetClickable(onClick, onLongClick, onDoubleClick),
     ) {
+        when {
+            !playableUri.isNullOrBlank() -> {
+                InWidgetVideoPlayer(
+                    mediaUri = playableUri,
+                    playing = matched?.isPlaying == true,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+            matched?.artwork != null -> {
+                Image(
+                    bitmap = matched.artwork.asImageBitmap(),
+                    contentDescription = headline,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+            else -> {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(0.35f)),
+                )
+            }
+        }
+
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black.copy(0.35f)),
+                .background(Color.Black.copy(alpha = if (playableUri != null) 0.2f else 0.35f)),
         )
+
         Column(
             modifier = Modifier
-                .align(Alignment.Center)
-                .padding(10.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(42.dp)
-                    .clip(CircleShape)
-                    .background(Color.White.copy(0.9f)),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text("▶", color = Color(0xFF1A237E), fontSize = 18.sp, fontWeight = FontWeight.Bold)
-            }
-            Spacer(modifier = Modifier.height(6.dp))
-            Text(title, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text("Video player", color = Color.White.copy(0.75f), fontSize = 10.sp)
-        }
-        if (app != null) {
-            androidx.compose.foundation.Image(
-                bitmap = app.icon,
-                contentDescription = null,
-                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(8.dp)
-                    .size(22.dp)
-                    .clip(RoundedCornerShape(6.dp)),
-            )
-        }
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
+                .align(Alignment.BottomStart)
                 .fillMaxWidth()
-                .height(4.dp)
-                .background(Color.White.copy(0.25f)),
+                .background(Color.Black.copy(0.45f))
+                .padding(10.dp),
         ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth(0.38f)
-                    .height(4.dp)
-                    .background(Color(0xFFFF5252)),
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (app != null) {
+                    Image(
+                        bitmap = app.icon,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .size(22.dp)
+                            .clip(RoundedCornerShape(6.dp)),
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        headline,
+                        color = Color.White,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(subtitle, color = Color.White.copy(0.8f), fontSize = 10.sp, maxLines = 1)
+                }
+                Text(
+                    if (matched?.isPlaying == true) "⏸" else "▶",
+                    color = Color.White,
+                    fontSize = 16.sp,
+                    modifier = Modifier.clickable {
+                        MediaNotificationListener.playPause(matched?.packageName ?: app?.packageName)
+                    },
+                )
+            }
+            if (progress > 0f) {
+                Spacer(modifier = Modifier.height(6.dp))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(3.dp)
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(Color.White.copy(0.25f)),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(progress)
+                            .height(3.dp)
+                            .background(Color.White),
+                    )
+                }
+            }
         }
     }
 }

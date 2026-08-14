@@ -128,8 +128,11 @@ fun FloatingWidgetsLayer(
                     )
                     .then(
                         if (allowMove || editable) {
+                            // Native AppWidgets must receive their own taps (play, skip, …).
+                            // Only attach long-press move; never a competing tap handler.
+                            val moveOnly = widget.hostsNativeWidget
                             Modifier
-                                .pointerInput(widget.id, editable, allowMove) {
+                                .pointerInput(widget.id, editable, allowMove, moveOnly) {
                                     detectDragGesturesAfterLongPress(
                                         onDragStart = {
                                             interacting = true
@@ -156,22 +159,30 @@ fun FloatingWidgetsLayer(
                                             .coerceIn(0f, (ph - heightPx).coerceAtLeast(0f))
                                     }
                                 }
-                                .pointerInput(widget.id, editable) {
-                                    detectTapGestures(
-                                        onTap = {
-                                            if (!interacting && !editable) onClick(latestWidget)
-                                        },
-                                        onDoubleTap = {
-                                            if (editable) onDoubleTap(latestWidget)
-                                        },
-                                    )
-                                }
+                                .then(
+                                    if (moveOnly) {
+                                        Modifier
+                                    } else {
+                                        Modifier.pointerInput(widget.id, editable) {
+                                            detectTapGestures(
+                                                onTap = {
+                                                    if (!interacting && !editable) onClick(latestWidget)
+                                                },
+                                                onDoubleTap = {
+                                                    if (editable) onDoubleTap(latestWidget)
+                                                },
+                                            )
+                                        }
+                                    },
+                                )
                         } else {
                             Modifier
                         },
                     ),
             ) {
-                if (widget.hostsNativeWidget && !editable) {
+                // Always host the real AppWidget when bound — including edit mode —
+                // so Poweramp/Spotify/etc. keep their official themed RemoteViews.
+                if (widget.hostsNativeWidget) {
                     NativeAppWidgetView(
                         appWidgetId = widget.appWidgetId,
                         providerFlat = widget.providerFlat,

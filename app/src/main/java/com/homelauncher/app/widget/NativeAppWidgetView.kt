@@ -107,8 +107,12 @@ fun updateAppWidgetHostSize(
 fun bindNativeWidgetForPackage(
     context: android.content.Context,
     packageName: String,
+    preferredProvider: ComponentName? = null,
 ): NativeBindOutcome {
-    val preferred = preferredNativeWidget(context, packageName)
+    val preferred = preferredProvider?.let { provider ->
+        findNativeWidgetsForPackage(context, packageName)
+            .firstOrNull { it.provider == provider }
+    } ?: preferredNativeWidget(context, packageName)
         ?: return NativeBindOutcome.NoProvider
     val id = LauncherAppWidgetHost.allocateId(context)
     return when (val result = LauncherAppWidgetHost.tryBind(context, id, preferred.provider)) {
@@ -118,12 +122,18 @@ fun bindNativeWidgetForPackage(
                 appWidgetId = id,
                 provider = preferred.provider,
                 configureIntent = configure,
+                widgetLabel = preferred.label,
+                minWidthPx = preferred.minWidth,
+                minHeightPx = preferred.minHeight,
+                sizeHint = preferred,
             )
         }
         is LauncherAppWidgetHost.BindResult.NeedsPermission -> NativeBindOutcome.NeedsUserConsent(
             appWidgetId = id,
             provider = preferred.provider,
             bindIntent = result.intent,
+            widgetLabel = preferred.label,
+            sizeHint = preferred,
         )
     }
 }
@@ -134,10 +144,16 @@ sealed class NativeBindOutcome {
         val appWidgetId: Int,
         val provider: ComponentName,
         val configureIntent: android.content.Intent?,
+        val widgetLabel: String = "",
+        val minWidthPx: Int = 0,
+        val minHeightPx: Int = 0,
+        val sizeHint: AppNativeWidgetInfo? = null,
     ) : NativeBindOutcome()
     data class NeedsUserConsent(
         val appWidgetId: Int,
         val provider: ComponentName,
         val bindIntent: android.content.Intent,
+        val widgetLabel: String = "",
+        val sizeHint: AppNativeWidgetInfo? = null,
     ) : NativeBindOutcome()
 }

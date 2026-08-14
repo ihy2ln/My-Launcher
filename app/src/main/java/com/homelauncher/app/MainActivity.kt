@@ -93,6 +93,7 @@ import com.homelauncher.app.ui.theme.rememberPalette
 import com.homelauncher.app.widget.LauncherAppWidgetHost
 import com.homelauncher.app.widget.NativeBindOutcome
 import com.homelauncher.app.widget.bindNativeWidgetForPackage
+import com.homelauncher.app.widget.shouldAutoBindNative
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -119,6 +120,7 @@ private data class PendingNativeBind(
     val linkedType: WidgetType?,
     val appWidgetId: Int,
     val provider: ComponentName,
+    val sizeHint: com.homelauncher.app.widget.AppNativeWidgetInfo? = null,
 )
 
 private sealed interface PlacementTarget {
@@ -230,23 +232,28 @@ fun HomeLauncherApp() {
         linked: WidgetType?,
         appWidgetId: Int = -1,
         providerFlat: String? = null,
+        sizeHint: com.homelauncher.app.widget.AppNativeWidgetInfo? = null,
+        stayInEdit: Boolean? = null,
     ) {
         scope.launch {
             val widget = layout.floatingWidgets.firstOrNull { it.id == widgetId }
             if (widget != null) {
                 val hostsNative = appWidgetId != -1 && !providerFlat.isNullOrBlank()
-                // Never shrink an existing widget on bind — only grow to a usable minimum.
-                val minW = when {
-                    hostsNative -> 0.55f
-                    linked == WidgetType.VIDEO || linked == WidgetType.YOUTUBE || linked == WidgetType.TWITCH -> 0.58f
-                    linked == WidgetType.MUSIC || linked == WidgetType.SPOTIFY || linked == WidgetType.POWERAMP -> 0.55f
+                val fromProvider = sizeHint?.let {
+                    com.homelauncher.app.widget.providerSizeFractions(context, it)
+                }
+                // Never shrink — grow using official AppWidget metadata size when present.
+                val minW = fromProvider?.first ?: when {
+                    hostsNative -> 0.62f
+                    linked == WidgetType.VIDEO || linked == WidgetType.YOUTUBE || linked == WidgetType.TWITCH -> 0.7f
+                    linked == WidgetType.MUSIC || linked == WidgetType.SPOTIFY || linked == WidgetType.POWERAMP -> 0.62f
                     linked == WidgetType.GAME -> 0.42f
                     else -> 0.42f
                 }
-                val minH = when {
+                val minH = fromProvider?.second ?: when {
                     hostsNative -> 0.28f
-                    linked == WidgetType.VIDEO || linked == WidgetType.YOUTUBE -> 0.22f
-                    linked == WidgetType.MUSIC || linked == WidgetType.SPOTIFY || linked == WidgetType.POWERAMP -> 0.18f
+                    linked == WidgetType.VIDEO || linked == WidgetType.YOUTUBE -> 0.32f
+                    linked == WidgetType.MUSIC || linked == WidgetType.SPOTIFY || linked == WidgetType.POWERAMP -> 0.2f
                     linked == WidgetType.GAME -> 0.18f
                     else -> 0.16f
                 }
@@ -265,11 +272,12 @@ fun HomeLauncherApp() {
                 repository.bindBlankWidget(widgetId, app.key, linked, appWidgetId, providerFlat)
             }
             blankWidgetBindTarget = null
-            overlay = if (returnToEditAfterPick) {
+            val keepEdit = stayInEdit ?: returnToEditAfterPick
+            if (keepEdit) {
                 returnToEditAfterPick = false
-                Overlay.EditHome
-            } else {
-                Overlay.None
+                overlay = Overlay.EditHome
+            } else if (overlay != Overlay.EditHome) {
+                overlay = Overlay.None
             }
         }
     }
@@ -291,11 +299,12 @@ fun HomeLauncherApp() {
                 linked = pending.linkedType,
                 appWidgetId = pending.appWidgetId,
                 providerFlat = pending.provider.flattenToString(),
+                sizeHint = pending.sizeHint,
+                stayInEdit = true,
             )
         } else {
             LauncherAppWidgetHost.deleteId(context, pending.appWidgetId)
-            // Fall back to metadata / in-widget operate mode
-            applyBoundWidget(pending.widgetId, pending.app, pending.linkedType)
+            applyBoundWidget(pending.widgetId, pending.app, pending.linkedType, stayInEdit = true)
         }
     }
 
@@ -312,6 +321,7 @@ fun HomeLauncherApp() {
                     linked = linked,
                     appWidgetId = outcome.appWidgetId,
                     providerFlat = outcome.provider.flattenToString(),
+                    sizeHint = outcome.sizeHint,
                 )
             }
             is NativeBindOutcome.NeedsUserConsent -> {
@@ -321,10 +331,62 @@ fun HomeLauncherApp() {
                     linkedType = linked,
                     appWidgetId = outcome.appWidgetId,
                     provider = outcome.provider,
+                    sizeHint = outcome.sizeHint,
                 )
                 bindWidgetLauncher.launch(outcome.bindIntent)
             }
             NativeBindOutcome.NoProvider -> applyBoundWidget(widgetId, app, linked)
+        }
+    }
+
+    /**
+     * Catalog widgets (Poweramp, Spotify, Video, …) bind the installed app's
+     * official AppWidget from package metadata — same path other launchers use.
+     */
+    fun bindThemedWidget(widgetId: String, type: WidgetType) {
+        val resolved = com.homelauncher.app.widget.resolveAppAndNativeWidget(context, apps, type)
+        if (resolved != null) {
+            val (app, native) = resolved
+            when (val outcome = bindNativeWidgetForPackage(context, app.packageName, native.provider)) {
+                is NativeBindOutcome.Success -> {
+                    if (outcome.configureIntent != null) {
+                        runCatching { context.startActivity(outcome.configureIntent) }
+                    }
+                    applyBoundWidget(
+                        widgetId = widgetId,
+                        app = app,
+                        linked = type,
+                        appWidgetId = outcome.appWidgetId,
+                        providerFlat = outcome.provider.flattenToString(),
+                        sizeHint = outcome.sizeHint ?: native,
+                        stayInEdit = true,
+                    )
+                }
+                is NativeBindOutcome.NeedsUserConsent -> {
+                    applyBoundWidget(widgetId, app, type, stayInEdit = true)
+                    pendingNativeBind = PendingNativeBind(
+                        widgetId = widgetId,
+                        app = app,
+                        linkedType = type,
+                        appWidgetId = outcome.appWidgetId,
+                        provider = outcome.provider,
+                        sizeHint = outcome.sizeHint ?: native,
+                    )
+                    bindWidgetLauncher.launch(outcome.bindIntent)
+                }
+                NativeBindOutcome.NoProvider -> applyBoundWidget(widgetId, app, type, stayInEdit = true)
+            }
+            return
+        }
+        val appOnly = com.homelauncher.app.widget.resolveInstalledAppForWidgetType(apps, type)
+        if (appOnly != null) {
+            applyBoundWidget(widgetId, appOnly, type, stayInEdit = true)
+        } else if (type == WidgetType.BLANK || type == WidgetType.MUSIC ||
+            type == WidgetType.VIDEO || type == WidgetType.GAME
+        ) {
+            blankWidgetBindTarget = widgetId
+            returnToEditAfterPick = true
+            overlay = Overlay.Drawer
         }
     }
 
@@ -379,12 +441,8 @@ fun HomeLauncherApp() {
     }
 
     fun handleFloatingWidgetClick(widget: FloatingWidget) {
-        if (widget.hostsNativeWidget) {
-            // Expand native widget into a larger PiP frame for easier use
-            val boundApp = widget.appKey?.let { findApp(apps, it) }
-            if (boundApp != null) openAppPip(boundApp, widget.effectiveType(), widget)
-            return
-        }
+        // Official AppWidgets handle their own taps — do not steal them for PiP.
+        if (widget.hostsNativeWidget) return
         val boundApp = widget.appKey?.let { findApp(apps, it) }
         when (val type = widget.effectiveType()) {
             WidgetType.APP_DRAWER -> overlay = Overlay.Drawer
@@ -474,6 +532,9 @@ fun HomeLauncherApp() {
                             returnToEditAfterPick = true
                             overlay = Overlay.Drawer
                         },
+                        onBindThemedWidget = { widgetId, type ->
+                            bindThemedWidget(widgetId, type)
+                        },
                         onAddAppsToFolder = { folder ->
                             folderAddTarget = folder
                             multiSelectKeys = emptySet()
@@ -499,7 +560,12 @@ fun HomeLauncherApp() {
                         overlay = Overlay.Settings
                     },
                     onAddWidget = { type ->
-                        scope.launch { repository.addFloatingWidget(type) }
+                        scope.launch {
+                            val id = repository.addFloatingWidget(type)
+                            if (type.shouldAutoBindNative()) {
+                                bindThemedWidget(id, type)
+                            }
+                        }
                         overlay = Overlay.EditHome
                     },
                     onClose = { overlay = Overlay.None },

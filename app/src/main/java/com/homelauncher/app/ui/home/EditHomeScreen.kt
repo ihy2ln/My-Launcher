@@ -77,6 +77,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.zIndex
 import com.homelauncher.app.model.FloatingWidget
 import com.homelauncher.app.model.displayAppLabel
+import com.homelauncher.app.widget.shouldAutoBindNative
 import com.homelauncher.app.ui.search.LauncherSearchBar
 import com.homelauncher.app.ui.theme.LauncherPalette
 import com.homelauncher.app.ui.theme.iconShape
@@ -96,6 +97,7 @@ fun EditHomeScreen(
     onDone: () -> Unit,
     onPickAppForSlot: (Int) -> Unit,
     onPickAppForBlankWidget: (String) -> Unit,
+    onBindThemedWidget: (String, WidgetType) -> Unit = { _, _ -> },
     onAddAppsToFolder: (FolderInfo) -> Unit,
     onOpenSettings: () -> Unit,
     onOpenSearch: () -> Unit,
@@ -495,8 +497,8 @@ fun EditHomeScreen(
                             scope.launch {
                                 val id = repository.addFloatingWidget(type)
                                 showWidgetPicker = false
-                                if (type == WidgetType.BLANK) {
-                                    onPickAppForBlankWidget(id)
+                                if (type.shouldAutoBindNative()) {
+                                    onBindThemedWidget(id, type)
                                 }
                             }
                         }
@@ -528,11 +530,17 @@ fun EditHomeScreen(
                         onValueChange = { widgetOpacityDraft = it },
                         valueRange = 0.15f..1f,
                     )
-                    if (widget.type == WidgetType.BLANK) {
+                    if (widget.type == WidgetType.BLANK || widget.appKey == null) {
                         TextButton(onClick = {
                             widgetEditTarget = null
                             onPickAppForBlankWidget(widget.id)
-                        }) { Text("Choose app") }
+                        }) { Text("Choose / change app") }
+                    }
+                    if (!widget.hostsNativeWidget && widget.appKey != null) {
+                        TextButton(onClick = {
+                            widgetEditTarget = null
+                            onBindThemedWidget(widget.id, widget.effectiveType())
+                        }) { Text("Use official app widget") }
                     }
                 }
             },

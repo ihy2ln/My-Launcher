@@ -20,6 +20,9 @@ data class NowPlayingState(
     val canSkip: Boolean = false,
     val canPrevious: Boolean = false,
     val artwork: Bitmap? = null,
+    /** Content/http URI from MediaMetadata when the session exposes playable media. */
+    val mediaUri: String? = null,
+    val artUri: String? = null,
     val brandColor: Long = 0xFF1DB954,
 ) {
     val progress: Float
@@ -27,6 +30,9 @@ data class NowPlayingState(
 
     val hasTrack: Boolean
         get() = title.isNotBlank() || artist.isNotBlank()
+
+    val hasPlayableUri: Boolean
+        get() = !mediaUri.isNullOrBlank()
 
     companion object {
         val Empty = NowPlayingState()

@@ -2,8 +2,10 @@
 
 A modern Nova/Lawnchair-inspired Android home screen launcher built with Kotlin and Jetpack Compose.
 
-## Features (v0.12.1)
+## Features (v0.13.0)
 
+- **Official app widgets** — Poweramp, Spotify, YouTube, VLC, etc. bind their real themed AppWidgets from package metadata (same path as Nova/Lawnchair)
+- **Live video widgets** — play session media URI in-widget when exposed; otherwise full-bleed artwork + transport
 - **Multi-page home** — swipeable pages with scroll effects, configurable grid & dock
 - **Floating widgets** — blank/native AppWidgets, clock, live weather, music/video/game, search, calendar, notes
 - **PiP app frames** — open apps in an on-home picture-in-picture style window
@@ -19,10 +21,11 @@ A modern Nova/Lawnchair-inspired Android home screen launcher built with Kotlin 
 
 Download the latest APK from the [Releases](https://github.com/ihy2ln/My-Launcher/releases) page.
 
-1. Install **HomeLauncher-v0.12.1.apk**
+1. Install **HomeLauncher-v0.13.0.apk**
 2. Press **Home** → choose **Home Launcher** → **Always**
 3. Grant **Notification access** for live media cards and badges
-4. (Optional) Grant **Usage access** for Suggested apps; **Location** for local weather
+4. When prompted, **allow the app widget** bind so Poweramp/etc. show their official widget
+5. (Optional) Grant **Usage access** for Suggested apps; **Location** for local weather
 
 ### Build from source
 
