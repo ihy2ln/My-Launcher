@@ -42,7 +42,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.produceState
-import androidx.compose.ui.platform.LocalContext
 import com.homelauncher.app.AppInfo
 import com.homelauncher.app.media.MediaNotificationListener
 import com.homelauncher.app.media.NowPlayingState

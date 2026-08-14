@@ -242,6 +242,9 @@ fun SettingsScreen(
                             SliderRow("Rows", settings.homeRows.toFloat(), 4f, 7f, palette) {
                                 update { s -> s.copy(homeRows = it.toInt()) }
                             }
+                            SliderRow("Home pages", settings.homePages.toFloat(), 1f, 5f, palette) {
+                                update { s -> s.copy(homePages = it.toInt().coerceIn(1, 5)) }
+                            }
                             SliderRow("Dock icons", settings.dockSlots.toFloat(), 3f, 7f, palette) {
                                 update { s -> s.copy(dockSlots = it.toInt()) }
                             }
@@ -260,6 +263,12 @@ fun SettingsScreen(
                                 palette = palette,
                                 onSelect = { index -> update { it.copy(drawerScroll = DrawerScroll.entries[index]) } },
                             )
+                            SettingSwitch("Suggested apps row", settings.showSuggestedApps, palette) {
+                                update { s -> s.copy(showSuggestedApps = it) }
+                            }
+                            SettingSwitch("A–Z scrubber", settings.showAzScrubber, palette) {
+                                update { s -> s.copy(showAzScrubber = it) }
+                            }
                             Text("Drawer groups", color = palette.textPrimary, fontSize = 15.sp, modifier = Modifier.padding(top = 8.dp))
                             if (layout.drawerGroups.isEmpty()) {
                                 Text("No groups yet. Long-press an app and choose Add to group.", color = palette.textSecondary, fontSize = 13.sp)
@@ -376,10 +385,16 @@ fun SettingsScreen(
                         }
                         SettingsSection.BADGES -> {
                             Text(
-                                "Notification badges follow the system unread counts when available.",
+                                "Notification badges use unread counts from the notification listener when access is granted.",
                                 color = palette.textSecondary,
                                 fontSize = 14.sp,
                             )
+                            SettingSwitch("Show notification badges", settings.showNotificationBadges, palette) {
+                                update { s -> s.copy(showNotificationBadges = it) }
+                            }
+                            ActionRow("Notification access", "Required for badges and live media cards", palette) {
+                                com.homelauncher.app.media.MediaNotificationListener.openNotificationAccessSettings(context)
+                            }
                         }
                         SettingsSection.BACKUP -> {
                             ActionRow("Backup to file", "Export layout and settings JSON", palette) {

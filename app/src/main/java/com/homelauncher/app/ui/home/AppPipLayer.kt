@@ -225,6 +225,17 @@ fun HomePipLayer(
                             .padding(horizontal = 4.dp),
                     )
                 }
+                freeformHint?.let { hint ->
+                    Text(
+                        hint,
+                        color = Color.White.copy(0.55f),
+                        fontSize = 10.sp,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color.Black.copy(0.35f))
+                            .padding(horizontal = 10.dp, vertical = 3.dp),
+                    )
+                }
 
                 Box(
                     modifier = Modifier
