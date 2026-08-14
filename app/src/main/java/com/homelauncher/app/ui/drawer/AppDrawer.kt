@@ -18,10 +18,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items as lazyListItems
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyHorizontalGrid
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
@@ -49,6 +52,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.homelauncher.app.AppInfo
@@ -62,6 +66,8 @@ import com.homelauncher.app.ui.search.MicroResult
 import com.homelauncher.app.ui.search.SearchEngine
 import com.homelauncher.app.ui.theme.LauncherPalette
 import kotlinx.coroutines.launch
+
+private val AzLetters = ('A'..'Z').toList()
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -81,6 +87,8 @@ fun AppDrawer(
     appAliases: Map<String, String> = emptyMap(),
     onToggleSelect: (AppInfo) -> Unit = {},
     onConfirmSelection: () -> Unit = {},
+    suggestedApps: List<AppInfo> = emptyList(),
+    badgeCounts: Map<String, Int> = emptyMap(),
 ) {
     var query by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
@@ -96,6 +104,15 @@ fun AppDrawer(
     val useTabs = groups.isNotEmpty() && query.isBlank()
     val drawerBg = if (palette.isDark) palette.drawerBackground else Color.White
     val searchBg = if (palette.isDark) palette.searchBackground else Color(0xFFD7ECF8)
+    var scrubLetter by remember { mutableStateOf<Char?>(null) }
+    val showSuggested = settings.showSuggestedApps &&
+        query.isBlank() &&
+        suggestedApps.isNotEmpty() &&
+        !selectionMode &&
+        placementHint == null
+    val showAzScrubber = settings.showAzScrubber &&
+        query.isBlank() &&
+        settings.drawerScroll != DrawerScroll.HORIZONTAL
 
     Surface(
         modifier = Modifier
@@ -159,6 +176,17 @@ fun AppDrawer(
                 )
             }
 
+            if (showSuggested) {
+                SuggestedAppsRow(
+                    apps = suggestedApps,
+                    settings = settings,
+                    palette = palette,
+                    badgeCounts = badgeCounts,
+                    onLaunch = onLaunch,
+                    onLongPress = onLongPress,
+                )
+            }
+
             if (groups.isNotEmpty()) {
                 Row(
                     modifier = Modifier
@@ -203,11 +231,33 @@ fun AppDrawer(
                                 Text("No matches for \"$query\"", color = palette.textSecondary)
                             }
                         } else {
-                            AppGrid(filteredApps, settings, palette, selectedKeys, appAliases, tapAction, onLongPress)
+                            AppGrid(
+                                apps = filteredApps,
+                                settings = settings,
+                                palette = palette,
+                                selectedKeys = selectedKeys,
+                                appAliases = appAliases,
+                                badgeCounts = badgeCounts,
+                                scrubLetter = scrubLetter,
+                                onScrubConsumed = { scrubLetter = null },
+                                onLaunch = tapAction,
+                                onLongPress = onLongPress,
+                            )
                         }
                     }
                     groups.isEmpty() -> {
-                        AppGrid(visibleApps, settings, palette, selectedKeys, appAliases, tapAction, onLongPress)
+                        AppGrid(
+                            apps = visibleApps,
+                            settings = settings,
+                            palette = palette,
+                            selectedKeys = selectedKeys,
+                            appAliases = appAliases,
+                            badgeCounts = badgeCounts,
+                            scrubLetter = scrubLetter,
+                            onScrubConsumed = { scrubLetter = null },
+                            onLaunch = tapAction,
+                            onLongPress = onLongPress,
+                        )
                     }
                     else -> {
                         HorizontalPager(
@@ -233,10 +283,29 @@ fun AppDrawer(
                                     )
                                 }
                             } else {
-                                AppGrid(pageApps, settings, palette, selectedKeys, appAliases, tapAction, onLongPress)
+                                AppGrid(
+                                    apps = pageApps,
+                                    settings = settings,
+                                    palette = palette,
+                                    selectedKeys = selectedKeys,
+                                    appAliases = appAliases,
+                                    badgeCounts = badgeCounts,
+                                    scrubLetter = if (page == pagerState.currentPage) scrubLetter else null,
+                                    onScrubConsumed = { scrubLetter = null },
+                                    onLaunch = tapAction,
+                                    onLongPress = onLongPress,
+                                )
                             }
                         }
                     }
+                }
+
+                if (showAzScrubber) {
+                    AzLetterScrubber(
+                        palette = palette,
+                        modifier = Modifier.align(Alignment.CenterEnd),
+                        onLetter = { letter -> scrubLetter = letter },
+                    )
                 }
             }
 
@@ -464,15 +533,102 @@ private fun CompactMediaCard(
 }
 
 @Composable
+private fun SuggestedAppsRow(
+    apps: List<AppInfo>,
+    settings: LauncherSettings,
+    palette: LauncherPalette,
+    badgeCounts: Map<String, Int>,
+    onLaunch: (AppInfo) -> Unit,
+    onLongPress: (AppInfo) -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 8.dp),
+    ) {
+        Text(
+            text = "Suggested",
+            color = palette.textSecondary,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(bottom = 8.dp),
+        )
+        LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = PaddingValues(end = 8.dp),
+        ) {
+            lazyListItems(apps, key = { it.key }) { app ->
+                Box(modifier = Modifier.width((settings.iconSizeDp + 8).dp)) {
+                    AppIconView(
+                        app = app,
+                        settings = settings,
+                        palette = palette,
+                        onClick = { onLaunch(app) },
+                        onLongClick = { onLongPress(app) },
+                        showLabel = false,
+                        badgeCount = badgeCounts[app.packageName] ?: 0,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AzLetterScrubber(
+    palette: LauncherPalette,
+    onLetter: (Char) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier
+            .padding(vertical = 8.dp, horizontal = 2.dp)
+            .width(18.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        AzLetters.forEach { letter ->
+            Text(
+                text = letter.toString(),
+                color = palette.textSecondary.copy(alpha = 0.85f),
+                fontSize = 9.sp,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onLetter(letter) }
+                    .padding(vertical = 0.5.dp),
+                textAlign = TextAlign.Center,
+            )
+        }
+    }
+}
+
+@Composable
 private fun AppGrid(
     apps: List<AppInfo>,
     settings: LauncherSettings,
     palette: LauncherPalette,
     selectedKeys: Set<String>,
     appAliases: Map<String, String>,
+    badgeCounts: Map<String, Int>,
+    scrubLetter: Char?,
+    onScrubConsumed: () -> Unit,
     onLaunch: (AppInfo) -> Unit,
     onLongPress: (AppInfo) -> Unit,
 ) {
+    val gridState = rememberLazyGridState()
+    LaunchedEffect(scrubLetter, apps, appAliases) {
+        val letter = scrubLetter ?: return@LaunchedEffect
+        val index = apps.indexOfFirst { app ->
+            val label = appAliases[app.key] ?: app.label
+            label.startsWith(letter, ignoreCase = true)
+        }
+        if (index >= 0) {
+            gridState.animateScrollToItem(index)
+        }
+        onScrubConsumed()
+    }
+
     if (settings.drawerScroll == DrawerScroll.HORIZONTAL) {
         LazyHorizontalGrid(
             rows = GridCells.Fixed(5),
@@ -490,12 +646,14 @@ private fun AppGrid(
                     onLongClick = { onLongPress(app) },
                     labelOverride = appAliases[app.key],
                     selected = app.key in selectedKeys,
+                    badgeCount = badgeCounts[app.packageName] ?: 0,
                 )
             }
         }
     } else {
         LazyVerticalGrid(
             columns = GridCells.Fixed(settings.drawerColumns),
+            state = gridState,
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -510,6 +668,7 @@ private fun AppGrid(
                     onLongClick = { onLongPress(app) },
                     labelOverride = appAliases[app.key],
                     selected = app.key in selectedKeys,
+                    badgeCount = badgeCounts[app.packageName] ?: 0,
                 )
             }
         }

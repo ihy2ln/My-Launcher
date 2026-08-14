@@ -244,6 +244,8 @@ class LauncherRepository(private val context: Context) {
                 put("drawerScroll", s.drawerScroll.ordinal)
                 put("searchBarPosition", s.searchBarPosition.ordinal)
                 put("showDrawerCards", s.showDrawerCards)
+                put("showSuggestedApps", s.showSuggestedApps)
+                put("showAzScrubber", s.showAzScrubber)
                 put("wallpaperStyle", s.wallpaperStyle)
                 put("wallpaperMode", s.wallpaperMode.ordinal)
                 put("wallpaperColor", s.wallpaperColor)
@@ -298,6 +300,8 @@ class LauncherRepository(private val context: Context) {
                     drawerScroll = DrawerScroll.entries.getOrElse(settingsObj.optInt("drawerScroll", 0)) { DrawerScroll.VERTICAL },
                     searchBarPosition = SearchBarPosition.entries.getOrElse(settingsObj.optInt("searchBarPosition", 0)) { SearchBarPosition.TOP },
                     showDrawerCards = settingsObj.optBoolean("showDrawerCards", true),
+                    showSuggestedApps = settingsObj.optBoolean("showSuggestedApps", true),
+                    showAzScrubber = settingsObj.optBoolean("showAzScrubber", true),
                     wallpaperStyle = settingsObj.optInt("wallpaperStyle", 4),
                     wallpaperMode = WallpaperMode.entries.getOrElse(settingsObj.optInt("wallpaperMode", WallpaperMode.COLOR.ordinal)) { WallpaperMode.COLOR },
                     wallpaperColor = settingsObj.optLong("wallpaperColor", 0xFF3A4F50),
@@ -369,6 +373,8 @@ class LauncherRepository(private val context: Context) {
         val DRAWER_SCROLL = intPreferencesKey("drawer_scroll")
         val SEARCH_POS = intPreferencesKey("search_pos")
         val SHOW_DRAWER_CARDS = booleanPreferencesKey("show_drawer_cards")
+        val SHOW_SUGGESTED = booleanPreferencesKey("show_suggested_apps")
+        val SHOW_AZ = booleanPreferencesKey("show_az_scrubber")
         val WALLPAPER = intPreferencesKey("wallpaper")
         val WALLPAPER_MODE = intPreferencesKey("wallpaper_mode")
         val WALLPAPER_COLOR = longPreferencesKey("wallpaper_color")
@@ -408,6 +414,8 @@ class LauncherRepository(private val context: Context) {
             drawerScroll = DrawerScroll.entries.getOrElse(this[Keys.DRAWER_SCROLL] ?: 0) { DrawerScroll.VERTICAL },
             searchBarPosition = SearchBarPosition.entries.getOrElse(this[Keys.SEARCH_POS] ?: 0) { SearchBarPosition.TOP },
             showDrawerCards = this[Keys.SHOW_DRAWER_CARDS] ?: true,
+            showSuggestedApps = this[Keys.SHOW_SUGGESTED] ?: true,
+            showAzScrubber = this[Keys.SHOW_AZ] ?: true,
             wallpaperStyle = this[Keys.WALLPAPER] ?: 4,
             wallpaperMode = WallpaperMode.entries.getOrElse(this[Keys.WALLPAPER_MODE] ?: WallpaperMode.COLOR.ordinal) { WallpaperMode.COLOR },
             wallpaperColor = this[Keys.WALLPAPER_COLOR] ?: 0xFF3A4F50,
@@ -438,6 +446,8 @@ class LauncherRepository(private val context: Context) {
             prefs[Keys.DRAWER_SCROLL] = s.drawerScroll.ordinal
             prefs[Keys.SEARCH_POS] = s.searchBarPosition.ordinal
             prefs[Keys.SHOW_DRAWER_CARDS] = s.showDrawerCards
+            prefs[Keys.SHOW_SUGGESTED] = s.showSuggestedApps
+            prefs[Keys.SHOW_AZ] = s.showAzScrubber
             prefs[Keys.WALLPAPER] = s.wallpaperStyle
             prefs[Keys.WALLPAPER_MODE] = s.wallpaperMode.ordinal
             prefs[Keys.WALLPAPER_COLOR] = s.wallpaperColor
