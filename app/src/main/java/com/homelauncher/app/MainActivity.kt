@@ -162,6 +162,7 @@ fun HomeLauncherApp() {
     var blankWidgetBindTarget by remember { mutableStateOf<String?>(null) }
     var pendingNativeBind by remember { mutableStateOf<PendingNativeBind?>(null) }
     var mediaAccessPrompt by remember { mutableStateOf(false) }
+    var pipSessions by remember { mutableStateOf<List<com.homelauncher.app.ui.home.HomePipSession>>(emptyList()) }
 
     val apps by produceState(initialValue = emptyList<AppInfo>(), context) {
         value = withContext(Dispatchers.Default) { loadInstalledApps(context) }
@@ -299,31 +300,60 @@ fun HomeLauncherApp() {
         overlay = Overlay.GlobalSearch
     }
 
+    fun openAppPip(
+        app: AppInfo,
+        theme: WidgetType? = null,
+        widget: FloatingWidget? = null,
+    ) {
+        val existing = pipSessions.firstOrNull { it.app.key == app.key }
+        if (existing != null) {
+            // Bring to front by reordering
+            pipSessions = (pipSessions.filterNot { it.id == existing.id }) + existing
+            return
+        }
+        val session = com.homelauncher.app.ui.home.HomePipSession(
+            id = "pip_${app.packageName}_${System.currentTimeMillis()}",
+            app = app,
+            label = layout.appAliases[app.key] ?: app.label,
+            theme = theme ?: widget?.effectiveType()?.takeIf { it != WidgetType.BLANK },
+            widgetId = widget?.id,
+            appWidgetId = widget?.appWidgetId ?: -1,
+            providerFlat = widget?.providerFlat,
+            xFrac = widget?.xFrac?.coerceIn(0.04f, 0.3f) ?: 0.1f,
+            yFrac = widget?.yFrac?.coerceIn(0.12f, 0.4f) ?: 0.2f,
+            widthFrac = (widget?.widthFrac?.coerceAtLeast(0.55f) ?: 0.72f).coerceIn(0.55f, 0.92f),
+            heightFrac = (widget?.heightFrac?.coerceAtLeast(0.32f) ?: 0.42f).coerceIn(0.32f, 0.7f),
+        )
+        pipSessions = pipSessions + session
+    }
+
     fun handleFloatingWidgetClick(widget: FloatingWidget) {
-        if (widget.hostsNativeWidget) return
+        if (widget.hostsNativeWidget) {
+            // Expand native widget into a larger PiP frame for easier use
+            val boundApp = widget.appKey?.let { findApp(apps, it) }
+            if (boundApp != null) openAppPip(boundApp, widget.effectiveType(), widget)
+            return
+        }
         val boundApp = widget.appKey?.let { findApp(apps, it) }
         when (val type = widget.effectiveType()) {
             WidgetType.APP_DRAWER -> overlay = Overlay.Drawer
             WidgetType.CLOCK, WidgetType.WEATHER -> Unit
             WidgetType.BLANK -> {
-                if (boundApp != null) popoutTarget = boundApp to null
+                if (boundApp != null) openAppPip(boundApp, null, widget)
             }
-            WidgetType.GAME -> {
-                if (boundApp != null) popoutTarget = boundApp to WidgetType.GAME
-            }
+            WidgetType.GAME,
             WidgetType.MUSIC, WidgetType.VIDEO, WidgetType.POWERAMP, WidgetType.SPOTIFY,
             WidgetType.YOUTUBE, WidgetType.TWITCH,
             -> {
                 if (boundApp != null) {
-                    // Operate inside the widget frame (media controls / metadata)
-                    popoutTarget = boundApp to type
+                    openAppPip(boundApp, type, widget)
                 } else {
                     launchPackageOrUrl(context, type.launchPackages(), type.webFallback())
                 }
             }
             else -> {
                 if (boundApp != null) {
-                    popoutTarget = boundApp to type
+                    openAppPip(boundApp, type, widget)
                 } else {
                     launchPackageOrUrl(context, type.launchPackages(), type.webFallback())
                 }
@@ -608,6 +638,38 @@ fun HomeLauncherApp() {
             )
         }
 
+        if (pipSessions.isNotEmpty() && overlay == Overlay.None) {
+            com.homelauncher.app.ui.home.HomePipLayer(
+                sessions = pipSessions,
+                settings = settings,
+                palette = palette,
+                onClose = { id -> pipSessions = pipSessions.filterNot { it.id == id } },
+                onExpandFullscreen = { app ->
+                    pipSessions = emptyList()
+                    launchApp(context, app)
+                },
+                onUpdateBounds = { updated ->
+                    pipSessions = pipSessions.map { if (it.id == updated.id) updated else it }
+                },
+                onNativeBound = { id, appWidgetId, providerFlat ->
+                    pipSessions = pipSessions.map {
+                        if (it.id == id) it.copy(appWidgetId = appWidgetId, providerFlat = providerFlat) else it
+                    }
+                    // Persist onto the source floating widget when present
+                    val session = pipSessions.firstOrNull { it.id == id }
+                    val widgetId = session?.widgetId
+                    if (widgetId != null) {
+                        scope.launch {
+                            val widget = layout.floatingWidgets.firstOrNull { it.id == widgetId } ?: return@launch
+                            repository.updateFloatingWidget(
+                                widget.copy(appWidgetId = appWidgetId, providerFlat = providerFlat),
+                            )
+                        }
+                    }
+                },
+            )
+        }
+
         if (mediaAccessPrompt) {
             AlertDialog(
                 onDismissRequest = { mediaAccessPrompt = false },
@@ -630,8 +692,9 @@ fun HomeLauncherApp() {
             )
         }
 
-        BackHandler(enabled = overlay != Overlay.None || openFolder != null || popoutTarget != null) {
+        BackHandler(enabled = overlay != Overlay.None || openFolder != null || popoutTarget != null || pipSessions.isNotEmpty()) {
             when {
+                pipSessions.isNotEmpty() -> pipSessions = pipSessions.dropLast(1)
                 popoutTarget != null -> popoutTarget = null
                 openFolder != null -> openFolder = null
                 overlay != Overlay.None -> {

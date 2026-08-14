@@ -197,6 +197,7 @@ fun HomeScreen(
                             onOpenFolder = onOpenFolder,
                             onWidgetClick = onWidgetClick,
                             onEmpty = { onEditHome() },
+                            onLongPress = { onEditHome() },
                         )
                     }
                 }
@@ -208,7 +209,9 @@ fun HomeScreen(
                     settings = settings,
                     palette = palette,
                     editable = false,
+                    allowMove = true,
                     onClick = onFloatingWidgetClick,
+                    onLongPress = { onEditHome() },
                     onMove = onFloatingWidgetMove,
                     onResize = onFloatingWidgetResize,
                 )

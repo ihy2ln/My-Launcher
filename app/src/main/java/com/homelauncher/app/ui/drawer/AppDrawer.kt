@@ -45,6 +45,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -151,9 +152,9 @@ fun AppDrawer(
             }
 
             if (settings.showDrawerCards && query.isBlank() && placementHint == null && !selectionMode) {
-                DrawerMediaCard(palette = palette)
+                DrawerMediaCards(palette = palette)
                 HorizontalDivider(
-                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp),
                     color = palette.textSecondary.copy(alpha = 0.2f),
                 )
             }
@@ -277,14 +278,13 @@ fun AppDrawer(
 }
 
 @Composable
-private fun DrawerMediaCard(palette: LauncherPalette) {
+private fun DrawerMediaCards(palette: LauncherPalette) {
     val context = LocalContext.current
-    val nowPlaying by MediaNotificationListener.state.collectAsState()
+    val sessions by MediaNotificationListener.sessions.collectAsState()
     val listenerOn by MediaNotificationListener.listenerEnabled.collectAsState()
-    val accessGranted = remember {
-        MediaNotificationListener.isNotificationAccessEnabled(context)
+    var accessKnown by remember {
+        mutableStateOf(MediaNotificationListener.isNotificationAccessEnabled(context))
     }
-    var accessKnown by remember { mutableStateOf(accessGranted) }
 
     LaunchedEffect(Unit) {
         while (true) {
@@ -294,130 +294,170 @@ private fun DrawerMediaCard(palette: LauncherPalette) {
         }
     }
 
-    val title = when {
-        nowPlaying.hasTrack -> nowPlaying.title.ifBlank { "Unknown track" }
-        accessKnown || listenerOn -> "Nothing playing"
-        else -> "Enable media access"
-    }
-    val artist = when {
-        nowPlaying.hasTrack -> nowPlaying.artist.ifBlank { nowPlaying.appLabel ?: "Unknown artist" }
-        accessKnown || listenerOn -> "Play music to see it here"
-        else -> "Notification access required"
-    }
-    val progress = if (nowPlaying.hasTrack) nowPlaying.progress.coerceIn(0.02f, 1f) else 0f
-    val accent = Color(0xFF1DB954)
-
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp)
-            .clip(RoundedCornerShape(20.dp))
-            .background(accent)
-            .padding(16.dp),
+            .padding(horizontal = 16.dp, vertical = 2.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("♪", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                if (nowPlaying.isPlaying) "Now playing" else "Media",
-                color = Color.White,
-                fontWeight = FontWeight.SemiBold,
+        if (sessions.isEmpty()) {
+            CompactMediaCard(
+                brand = Color(0xFF455A64),
+                appLabel = "Media",
+                title = when {
+                    accessKnown || listenerOn -> "Nothing playing"
+                    else -> "Enable media access"
+                },
+                artist = when {
+                    accessKnown || listenerOn -> "Play audio or video to see cards here"
+                    else -> "Notification access required"
+                },
+                isPlaying = false,
+                progress = 0f,
+                artwork = null,
+                showControls = false,
+                onPlayPause = {},
+                onPrev = {},
+                onNext = {},
+                onOpen = {
+                    if (!accessKnown) {
+                        MediaNotificationListener.openNotificationAccessSettings(context)
+                    }
+                },
+                openLabel = if (accessKnown) "—" else "Enable",
             )
-            Spacer(modifier = Modifier.weight(1f))
-            Text(
-                nowPlaying.appLabel ?: "Card",
-                color = Color.White.copy(0.8f),
-                fontSize = 12.sp,
-            )
-        }
-        Spacer(modifier = Modifier.height(12.dp))
-        Text(title, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-        Text(artist, color = Color.White.copy(0.85f), fontSize = 13.sp, maxLines = 1)
-        Spacer(modifier = Modifier.height(10.dp))
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(4.dp)
-                .clip(RoundedCornerShape(2.dp))
-                .background(Color.White.copy(0.35f)),
-        ) {
-            if (progress > 0f) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth(progress)
-                        .height(4.dp)
-                        .background(Color.White),
+        } else {
+            sessions.forEach { session ->
+                CompactMediaCard(
+                    brand = Color(session.brandColor),
+                    appLabel = session.appLabel ?: session.packageName ?: "Media",
+                    title = session.title.ifBlank { "Unknown track" },
+                    artist = session.artist.ifBlank { session.appLabel.orEmpty() },
+                    isPlaying = session.isPlaying,
+                    progress = if (session.hasTrack) session.progress.coerceIn(0.02f, 1f) else 0f,
+                    artwork = session.artwork,
+                    showControls = true,
+                    onPlayPause = { MediaNotificationListener.playPause(session.packageName) },
+                    onPrev = { MediaNotificationListener.skipPrevious(session.packageName) },
+                    onNext = { MediaNotificationListener.skipNext(session.packageName) },
+                    onOpen = {
+                        val pkg = session.packageName ?: return@CompactMediaCard
+                        val launch = context.packageManager.getLaunchIntentForPackage(pkg)
+                        if (launch != null) {
+                            launch.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                            context.startActivity(launch)
+                        }
+                    },
+                    openLabel = "Open",
                 )
             }
         }
-        Spacer(modifier = Modifier.height(12.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
+    }
+}
+
+@Composable
+private fun CompactMediaCard(
+    brand: Color,
+    appLabel: String,
+    title: String,
+    artist: String,
+    isPlaying: Boolean,
+    progress: Float,
+    artwork: android.graphics.Bitmap?,
+    showControls: Boolean,
+    onPlayPause: () -> Unit,
+    onPrev: () -> Unit,
+    onNext: () -> Unit,
+    onOpen: () -> Unit,
+    openLabel: String,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(brand.copy(alpha = 0.95f))
+            .clickable(onClick = onOpen)
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(Color.White.copy(0.18f)),
+            contentAlignment = Alignment.Center,
         ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                if (nowPlaying.hasTrack) {
-                    Text(
-                        "⏮",
-                        color = Color.White,
-                        fontSize = 16.sp,
-                        modifier = Modifier.clickable { MediaNotificationListener.skipPrevious() },
-                    )
-                    Text(
-                        if (nowPlaying.isPlaying) "⏸" else "▶",
-                        color = Color.White,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.clickable { MediaNotificationListener.playPause() },
-                    )
-                    Text(
-                        "⏭",
-                        color = Color.White,
-                        fontSize = 16.sp,
-                        modifier = Modifier.clickable { MediaNotificationListener.skipNext() },
-                    )
-                } else {
-                    Text(
-                        if (accessKnown) "Get suggestions" else "Grant access",
-                        color = Color.White.copy(0.85f),
-                        fontSize = 12.sp,
-                        modifier = Modifier.clickable {
-                            if (!accessKnown) {
-                                MediaNotificationListener.openNotificationAccessSettings(context)
-                            }
-                        },
+            if (artwork != null) {
+                androidx.compose.foundation.Image(
+                    bitmap = artwork.asImageBitmap(),
+                    contentDescription = null,
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else {
+                Text("♪", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+        Spacer(modifier = Modifier.width(10.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                appLabel,
+                color = Color.White.copy(0.75f),
+                fontSize = 10.sp,
+                maxLines = 1,
+                fontWeight = FontWeight.Medium,
+            )
+            Text(
+                title,
+                color = Color.White,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+            )
+            if (artist.isNotBlank()) {
+                Text(artist, color = Color.White.copy(0.8f), fontSize = 11.sp, maxLines = 1)
+            }
+            if (progress > 0f) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(2.dp)
+                        .clip(RoundedCornerShape(1.dp))
+                        .background(Color.White.copy(0.28f)),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(progress)
+                            .height(2.dp)
+                            .background(Color.White),
                     )
                 }
             }
+        }
+        if (showControls) {
+            Spacer(modifier = Modifier.width(6.dp))
+            Text("⏮", color = Color.White, fontSize = 14.sp, modifier = Modifier.clickable(onClick = onPrev))
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                if (isPlaying) "⏸" else "▶",
+                color = Color.White,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.clickable(onClick = onPlayPause),
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("⏭", color = Color.White, fontSize = 14.sp, modifier = Modifier.clickable(onClick = onNext))
+        } else if (openLabel != "—") {
+            Spacer(modifier = Modifier.width(8.dp))
             Box(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(20.dp))
+                    .clip(RoundedCornerShape(14.dp))
                     .background(Color.White)
-                    .clickable {
-                        when {
-                            nowPlaying.packageName != null -> {
-                                val launch = context.packageManager.getLaunchIntentForPackage(nowPlaying.packageName!!)
-                                if (launch != null) {
-                                    launch.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                                    context.startActivity(launch)
-                                }
-                            }
-                            !accessKnown -> MediaNotificationListener.openNotificationAccessSettings(context)
-                        }
-                    }
-                    .padding(horizontal = 14.dp, vertical = 6.dp),
+                    .clickable(onClick = onOpen)
+                    .padding(horizontal = 10.dp, vertical = 4.dp),
             ) {
-                Text(
-                    when {
-                        nowPlaying.hasTrack -> "Open"
-                        accessKnown -> "Refresh"
-                        else -> "Enable"
-                    },
-                    color = accent,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                )
+                Text(openLabel, color = brand, fontSize = 11.sp, fontWeight = FontWeight.Bold)
             }
         }
     }

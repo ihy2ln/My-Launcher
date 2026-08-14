@@ -37,6 +37,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -267,91 +268,96 @@ fun EditHomeScreen(
                         contentPadding = PaddingValues(bottom = 8.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        userScrollEnabled = true,
+                        userScrollEnabled = dragState == null,
                     ) {
                         items(layout.homeSlots.size) { index ->
                             val isHoverTarget = hoverIndex == index && dragState != null && dragState?.fromIndex != index
                             val slot = layout.homeSlots[index]
+                            val isDragSource = dragState?.fromIndex == index
                             Box(
                                 modifier = Modifier
                                     .onGloballyPositioned { coords ->
                                         cellBounds[index] = coords.boundsInRoot()
                                     },
                             ) {
-                                if (dragState?.fromIndex == index) {
-                                    Box(modifier = Modifier.height(84.dp).fillMaxWidth())
-                                } else {
-                                    val style = layout.moduleStyles[index]
-                                    val opacity = style?.opacity ?: settings.moduleOpacity
-                                    ModulePlate(
-                                        opacity = opacity,
-                                        imageUri = style?.imageUri,
-                                        videoUri = style?.videoUri,
-                                        color = style?.color ?: 0xFF1A1A1A,
-                                        saturation = style?.saturation ?: 0.2f,
-                                        brightness = style?.brightness ?: 0.4f,
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .height(84.dp),
-                                    ) {
-                                        HomeCell(
-                                            slot = slot,
-                                            style = style,
-                                            defaultOpacity = settings.moduleOpacity,
-                                            apps = apps,
-                                            folders = layout.folders,
-                                            settings = settings,
-                                            palette = palette,
-                                            showEmpty = true,
-                                            highlighted = isHoverTarget && slot is HomeSlot.Folder,
-                                            appAliases = layout.appAliases,
-                                            onLaunch = { addTargetIndex = index },
-                                            onOpenFolder = { addTargetIndex = index },
-                                            onWidgetClick = { },
-                                            onEmpty = { addTargetIndex = index },
-                                            onDoubleClick = {
-                                                moduleEditIndex = index
-                                                val currentStyle = layout.moduleStyles[index] ?: ModuleStyle(opacity = settings.moduleOpacity)
-                                                renameModuleDraft = currentStyle.title.orEmpty()
-                                                moduleOpacityDraft = currentStyle.opacity
-                                                when (slot) {
-                                                    is HomeSlot.App -> {
-                                                        val app = findApp(apps, slot.key)
-                                                        if (app != null) {
-                                                            renameModuleDraft = layout.appAliases[app.key] ?: app.label
-                                                        }
+                                val style = layout.moduleStyles[index]
+                                val opacity = style?.opacity ?: settings.moduleOpacity
+                                // Keep the cell (and its long-press drag gesture) mounted while dragging.
+                                // Hiding only the visuals avoids cancelling pointerInput mid-drag.
+                                ModulePlate(
+                                    opacity = if (isDragSource) 0.15f else opacity,
+                                    imageUri = style?.imageUri,
+                                    videoUri = style?.videoUri,
+                                    color = style?.color ?: 0xFF1A1A1A,
+                                    saturation = style?.saturation ?: 0.2f,
+                                    brightness = style?.brightness ?: 0.4f,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(84.dp)
+                                        .alpha(if (isDragSource) 0.2f else 1f),
+                                ) {
+                                    HomeCell(
+                                        slot = slot,
+                                        style = style,
+                                        defaultOpacity = settings.moduleOpacity,
+                                        apps = apps,
+                                        folders = layout.folders,
+                                        settings = settings,
+                                        palette = palette,
+                                        showEmpty = true,
+                                        highlighted = isHoverTarget && slot is HomeSlot.Folder,
+                                        appAliases = layout.appAliases,
+                                        onLaunch = { if (dragState == null) addTargetIndex = index },
+                                        onOpenFolder = { if (dragState == null) addTargetIndex = index },
+                                        onWidgetClick = { },
+                                        onEmpty = { if (dragState == null) addTargetIndex = index },
+                                        onDoubleClick = {
+                                            if (dragState != null) return@HomeCell
+                                            moduleEditIndex = index
+                                            val currentStyle = layout.moduleStyles[index] ?: ModuleStyle(opacity = settings.moduleOpacity)
+                                            renameModuleDraft = currentStyle.title.orEmpty()
+                                            moduleOpacityDraft = currentStyle.opacity
+                                            when (slot) {
+                                                is HomeSlot.App -> {
+                                                    val app = findApp(apps, slot.key)
+                                                    if (app != null) {
+                                                        renameModuleDraft = layout.appAliases[app.key] ?: app.label
                                                     }
-                                                    is HomeSlot.Folder -> {
-                                                        renameModuleDraft = layout.folders[slot.folderId]?.title.orEmpty()
-                                                    }
-                                                    else -> Unit
                                                 }
-                                            },
-                                            onDragStart = { pos ->
-                                                val appKey = (slot as? HomeSlot.App)?.key ?: return@HomeCell
-                                                val app = findApp(apps, appKey) ?: return@HomeCell
-                                                dragState = HomeDragState(index, app, pos)
-                                                hoverIndex = index
-                                            },
-                                            onDrag = { pos ->
-                                                dragState = dragState?.copy(position = pos)
-                                                hoverIndex = hitTest(pos)
-                                            },
-                                            onDragEnd = {
-                                                val target = hoverIndex
-                                                val from = dragState?.fromIndex
-                                                if (from != null && target != null && target != from) {
-                                                    scope.launch { repository.moveHomeSlot(from, target) }
+                                                is HomeSlot.Folder -> {
+                                                    renameModuleDraft = layout.folders[slot.folderId]?.title.orEmpty()
                                                 }
+                                                else -> Unit
+                                            }
+                                        },
+                                        onDragStart = { pos ->
+                                            val appKey = (slot as? HomeSlot.App)?.key ?: return@HomeCell
+                                            val app = findApp(apps, appKey) ?: return@HomeCell
+                                            dragState = HomeDragState(index, app, pos)
+                                            hoverIndex = index
+                                        },
+                                        onDrag = { pos ->
+                                            dragState = dragState?.copy(position = pos)
+                                            hoverIndex = hitTest(pos)
+                                        },
+                                        onDragEnd = {
+                                            val target = hoverIndex
+                                            val from = dragState?.fromIndex
+                                            if (from != null && target != null && target != from) {
+                                                scope.launch { repository.moveHomeSlot(from, target) }
+                                            }
+                                            dragState = null
+                                            hoverIndex = null
+                                        },
+                                        onDragCancel = {
+                                            // Only clear if this cell is still the active source —
+                                            // ignore cancel storms from sibling recompositions.
+                                            if (dragState?.fromIndex == index) {
                                                 dragState = null
                                                 hoverIndex = null
-                                            },
-                                            onDragCancel = {
-                                                dragState = null
-                                                hoverIndex = null
-                                            },
-                                        )
-                                    }
+                                            }
+                                        },
+                                    )
                                 }
                             }
                         }

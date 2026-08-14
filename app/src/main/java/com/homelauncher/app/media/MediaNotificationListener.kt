@@ -16,8 +16,8 @@ import kotlinx.coroutines.flow.asStateFlow
 
 /**
  * Notification listener used as the privileged ComponentName for
- * [MediaSessionManager.getActiveSessions]. Also refreshes when media
- * notifications post/remove.
+ * [MediaSessionManager.getActiveSessions]. Publishes *all* active sessions
+ * so the drawer can show one themed card per player.
  */
 class MediaNotificationListener : NotificationListenerService() {
 
@@ -26,9 +26,9 @@ class MediaNotificationListener : NotificationListenerService() {
     }
 
     private val callback = object : MediaController.Callback() {
-        override fun onMetadataChanged(metadata: MediaMetadata?) = publishFromActive()
-        override fun onPlaybackStateChanged(state: PlaybackState?) = publishFromActive()
-        override fun onSessionDestroyed() = publishFromActive()
+        override fun onMetadataChanged(metadata: MediaMetadata?) = publishAll()
+        override fun onPlaybackStateChanged(state: PlaybackState?) = publishAll()
+        override fun onSessionDestroyed() = publishAll()
     }
 
     private var boundControllers: List<MediaController> = emptyList()
@@ -50,17 +50,13 @@ class MediaNotificationListener : NotificationListenerService() {
         }
         clearControllers()
         if (instance === this) instance = null
+        _sessions.value = emptyList()
         _state.value = NowPlayingState.Empty
         _listenerEnabled.value = false
     }
 
-    override fun onNotificationPosted(sbn: StatusBarNotification?) {
-        refreshSessions()
-    }
-
-    override fun onNotificationRemoved(sbn: StatusBarNotification?) {
-        refreshSessions()
-    }
+    override fun onNotificationPosted(sbn: StatusBarNotification?) = refreshSessions()
+    override fun onNotificationRemoved(sbn: StatusBarNotification?) = refreshSessions()
 
     fun refreshSessions() {
         val msm = getSystemService(MediaSessionManager::class.java) ?: return
@@ -68,25 +64,39 @@ class MediaNotificationListener : NotificationListenerService() {
         bindControllers(msm.getActiveSessions(cn))
     }
 
-    fun playPause() {
-        val controller = preferredController() ?: return
+    fun playPause(packageName: String? = null) {
+        val controller = controllerFor(packageName) ?: return
         val playing = controller.playbackState?.state == PlaybackState.STATE_PLAYING
         if (playing) controller.transportControls.pause() else controller.transportControls.play()
     }
 
-    fun skipNext() {
-        preferredController()?.transportControls?.skipToNext()
+    fun skipNext(packageName: String? = null) {
+        controllerFor(packageName)?.transportControls?.skipToNext()
     }
 
-    fun skipPrevious() {
-        preferredController()?.transportControls?.skipToPrevious()
+    fun skipPrevious(packageName: String? = null) {
+        controllerFor(packageName)?.transportControls?.skipToPrevious()
+    }
+
+    private fun controllerFor(packageName: String?): MediaController? {
+        if (!packageName.isNullOrBlank()) {
+            val match = boundControllers.firstOrNull { it.packageName.equals(packageName, true) }
+            if (match != null) return match
+        }
+        return preferredController()
     }
 
     private fun bindControllers(sessions: List<MediaController>) {
         clearControllers()
+        // Deduplicate by package — keep the richest session per app
         boundControllers = sessions
-        sessions.forEach { it.registerCallback(callback) }
-        publishFromActive()
+            .groupBy { it.packageName }
+            .map { (_, group) ->
+                group.firstOrNull { it.playbackState?.state == PlaybackState.STATE_PLAYING }
+                    ?: group.first()
+            }
+        boundControllers.forEach { it.registerCallback(callback) }
+        publishAll()
         _listenerEnabled.value = true
     }
 
@@ -104,15 +114,24 @@ class MediaNotificationListener : NotificationListenerService() {
         } ?: boundControllers.firstOrNull()
     }
 
-    private fun publishFromActive() {
-        val controller = preferredController()
-        if (controller == null) {
-            _state.value = NowPlayingState.Empty
-            return
-        }
+    private fun publishAll() {
+        val mapped = boundControllers.mapNotNull { toState(it) }
+            .sortedByDescending { it.isPlaying }
+        _sessions.value = mapped
+        _state.value = mapped.firstOrNull() ?: NowPlayingState.Empty
+    }
+
+    private fun toState(controller: MediaController): NowPlayingState? {
         val meta = controller.metadata
         val playback = controller.playbackState
-        val pkg = controller.packageName
+        val pkg = controller.packageName ?: return null
+        val state = playback?.state ?: PlaybackState.STATE_NONE
+        if (state == PlaybackState.STATE_NONE || state == PlaybackState.STATE_STOPPED ||
+            state == PlaybackState.STATE_ERROR
+        ) {
+            // Keep paused/buffering sessions; drop fully idle ones without metadata
+            if (meta == null) return null
+        }
         val label = runCatching {
             packageManager.getApplicationLabel(packageManager.getApplicationInfo(pkg, 0)).toString()
         }.getOrNull()
@@ -121,20 +140,28 @@ class MediaNotificationListener : NotificationListenerService() {
         val duration = meta?.getLong(MediaMetadata.METADATA_KEY_DURATION) ?: 0L
         val position = playback?.position ?: 0L
         val actions = playback?.actions ?: 0L
-        _state.value = NowPlayingState(
+        val title = meta?.getString(MediaMetadata.METADATA_KEY_TITLE).orEmpty()
+            .ifBlank { meta?.getString(MediaMetadata.METADATA_KEY_DISPLAY_TITLE).orEmpty() }
+        val artist = meta?.getString(MediaMetadata.METADATA_KEY_ARTIST).orEmpty()
+            .ifBlank { meta?.getString(MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE).orEmpty() }
+        if (title.isBlank() && artist.isBlank() && state != PlaybackState.STATE_PLAYING) {
+            return null
+        }
+        return NowPlayingState(
+            sessionKey = "${pkg}:${System.identityHashCode(controller.sessionToken)}",
             isActive = true,
-            isPlaying = playback?.state == PlaybackState.STATE_PLAYING,
-            title = meta?.getString(MediaMetadata.METADATA_KEY_TITLE).orEmpty()
-                .ifBlank { meta?.getString(MediaMetadata.METADATA_KEY_DISPLAY_TITLE).orEmpty() },
-            artist = meta?.getString(MediaMetadata.METADATA_KEY_ARTIST).orEmpty()
-                .ifBlank { meta?.getString(MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE).orEmpty() },
+            isPlaying = state == PlaybackState.STATE_PLAYING,
+            title = title.ifBlank { label ?: "Media" },
+            artist = artist,
             album = meta?.getString(MediaMetadata.METADATA_KEY_ALBUM).orEmpty(),
             packageName = pkg,
             appLabel = label,
             positionMs = position,
             durationMs = duration,
             canSkip = (actions and PlaybackState.ACTION_SKIP_TO_NEXT) != 0L,
+            canPrevious = (actions and PlaybackState.ACTION_SKIP_TO_PREVIOUS) != 0L,
             artwork = artwork,
+            brandColor = brandColorForPackage(pkg),
         )
     }
 
@@ -145,6 +172,9 @@ class MediaNotificationListener : NotificationListenerService() {
 
         private val _state = MutableStateFlow(NowPlayingState.Empty)
         val state: StateFlow<NowPlayingState> = _state.asStateFlow()
+
+        private val _sessions = MutableStateFlow<List<NowPlayingState>>(emptyList())
+        val sessions: StateFlow<List<NowPlayingState>> = _sessions.asStateFlow()
 
         private val _listenerEnabled = MutableStateFlow(false)
         val listenerEnabled: StateFlow<Boolean> = _listenerEnabled.asStateFlow()
@@ -168,9 +198,9 @@ class MediaNotificationListener : NotificationListenerService() {
             context.startActivity(intent)
         }
 
-        fun playPause() = instance?.playPause()
-        fun skipNext() = instance?.skipNext()
-        fun skipPrevious() = instance?.skipPrevious()
+        fun playPause(packageName: String? = null) = instance?.playPause(packageName)
+        fun skipNext(packageName: String? = null) = instance?.skipNext(packageName)
+        fun skipPrevious(packageName: String? = null) = instance?.skipPrevious(packageName)
         fun refresh() = instance?.refreshSessions()
     }
 }

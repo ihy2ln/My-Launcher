@@ -2,6 +2,7 @@ package com.homelauncher.app.ui.home
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
@@ -48,8 +49,11 @@ fun FloatingWidgetsLayer(
     settings: LauncherSettings,
     palette: LauncherPalette,
     editable: Boolean,
+    /** When true, long-press moves widgets even outside full edit chrome. */
+    allowMove: Boolean = editable,
     onClick: (FloatingWidget) -> Unit,
     onDoubleTap: (FloatingWidget) -> Unit = {},
+    onLongPress: (FloatingWidget) -> Unit = {},
     onMove: (FloatingWidget, xFrac: Float, yFrac: Float) -> Unit,
     onResize: (FloatingWidget, widthFrac: Float, heightFrac: Float) -> Unit,
 ) {
@@ -68,6 +72,7 @@ fun FloatingWidgetsLayer(
             var dragY by remember(widget.id, widget.yFrac) { mutableStateOf(widget.yFrac * parentH) }
             var widthPx by remember(widget.id, widget.widthFrac) { mutableStateOf(widget.widthFrac * parentW) }
             var heightPx by remember(widget.id, widget.heightFrac) { mutableStateOf(widget.heightFrac * parentH) }
+            var moving by remember(widget.id) { mutableStateOf(false) }
 
             val wDp = with(density) { widthPx.toDp() }
             val hDp = with(density) { heightPx.toDp() }
@@ -85,29 +90,46 @@ fun FloatingWidgetsLayer(
                     .size(wDp, hDp)
                     .alpha(widget.opacity.coerceIn(0.15f, 1f))
                     .then(
-                        if (editable) {
+                        if (editable || moving) {
                             Modifier.border(1.dp, palette.accent.copy(0.7f), RoundedCornerShape(16.dp))
                         } else {
                             Modifier
                         },
                     )
                     .then(
-                        if (editable) {
-                            Modifier.pointerInput(widget.id) {
-                                detectDragGesturesAfterLongPress(
-                                    onDragEnd = {
-                                        onMove(
-                                            widget,
-                                            (dragX / parentW).coerceIn(0f, 0.92f),
-                                            (dragY / parentH).coerceIn(0f, 0.92f),
-                                        )
-                                    },
-                                ) { change, dragAmount ->
-                                    change.consume()
-                                    dragX = (dragX + dragAmount.x).coerceIn(0f, parentW - widthPx)
-                                    dragY = (dragY + dragAmount.y).coerceIn(0f, parentH - heightPx)
+                        if (allowMove || editable) {
+                            Modifier
+                                .pointerInput(widget.id, editable, allowMove) {
+                                    detectDragGesturesAfterLongPress(
+                                        onDragStart = {
+                                            moving = true
+                                            onLongPress(widget)
+                                        },
+                                        onDragEnd = {
+                                            moving = false
+                                            onMove(
+                                                widget,
+                                                (dragX / parentW).coerceIn(0f, 0.92f),
+                                                (dragY / parentH).coerceIn(0f, 0.92f),
+                                            )
+                                        },
+                                        onDragCancel = { moving = false },
+                                    ) { change, dragAmount ->
+                                        change.consume()
+                                        dragX = (dragX + dragAmount.x).coerceIn(0f, parentW - widthPx)
+                                        dragY = (dragY + dragAmount.y).coerceIn(0f, parentH - heightPx)
+                                    }
                                 }
-                            }
+                                .pointerInput(widget.id, editable) {
+                                    detectTapGestures(
+                                        onTap = {
+                                            if (!moving && !editable) onClick(widget)
+                                        },
+                                        onDoubleTap = {
+                                            if (editable) onDoubleTap(widget)
+                                        },
+                                    )
+                                }
                         } else {
                             Modifier
                         },
@@ -135,19 +157,12 @@ fun FloatingWidgetsLayer(
                         title = displayLabel,
                         app = boundApp,
                         appLabel = displayLabel,
-                        onClick = { if (!editable) onClick(widget) },
-                        onDoubleClick = if (editable) {{ onDoubleTap(widget) }} else null,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .then(
-                                if (editable) {
-                                    Modifier.pointerInput(widget.id) {
-                                        detectTapGestures(onTap = { /* drag layer handles move */ })
-                                    }
-                                } else {
-                                    Modifier
-                                },
-                            ),
+                        onClick = { if (!editable && !moving) onClick(widget) },
+                        onLongClick = null,
+                        onDoubleClick = null,
+                        // Outer box owns gestures whenever move/edit is enabled.
+                        enableGestures = !allowMove && !editable,
+                        modifier = Modifier.fillMaxSize(),
                     )
                 }
 
@@ -159,7 +174,7 @@ fun FloatingWidgetsLayer(
                             .clip(RoundedCornerShape(topStart = 8.dp))
                             .background(palette.accent)
                             .pointerInput(widget.id) {
-                                detectDragGesturesAfterLongPress(
+                                detectDragGestures(
                                     onDragEnd = {
                                         onResize(
                                             widget,

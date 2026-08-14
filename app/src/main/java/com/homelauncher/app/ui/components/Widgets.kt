@@ -69,28 +69,33 @@ fun HomeWidgetView(
     onDoubleClick: (() -> Unit)? = null,
     app: AppInfo? = null,
     appLabel: String? = null,
+    enableGestures: Boolean = true,
 ) {
+    val click = if (enableGestures) onClick else ({})
+    val longClick = if (enableGestures) onLongClick else null
+    val doubleClick = if (enableGestures) onDoubleClick else null
     when (type) {
         WidgetType.BLANK -> BlankAppWidgetCard(
             palette = palette,
             app = app,
             label = appLabel ?: title ?: "App widget",
-            onClick = onClick,
-            onLongClick = onLongClick,
-            onDoubleClick = onDoubleClick,
+            onClick = click,
+            onLongClick = longClick,
+            onDoubleClick = doubleClick,
+            enableGestures = enableGestures,
             modifier = modifier,
         )
-        WidgetType.CLOCK -> ClockWidgetCard(palette, onClick, modifier, title, onLongClick, onDoubleClick)
-        WidgetType.WEATHER -> WeatherWidgetCard(palette, onClick, modifier, title, onLongClick, onDoubleClick)
-        WidgetType.APP_DRAWER -> AppDrawerWidgetCard(palette, onClick, modifier, title, onLongClick, onDoubleClick)
+        WidgetType.CLOCK -> ClockWidgetCard(palette, click, modifier, title, longClick, doubleClick)
+        WidgetType.WEATHER -> WeatherWidgetCard(palette, click, modifier, title, longClick, doubleClick)
+        WidgetType.APP_DRAWER -> AppDrawerWidgetCard(palette, click, modifier, title, longClick, doubleClick)
         WidgetType.YOUTUBE -> LiveMediaWidgetCard(
             brand = Color(0xFFFF0000),
             glyph = "▶",
             fallbackHeadline = title ?: "YouTube",
             fallbackSubtitle = "Watch · Subscribe",
             packageFilter = listOf("com.google.android.youtube", "com.vanced.android.youtube"),
-            onClick = onClick,
-            onLongClick = onLongClick,
+            onClick = click,
+            onLongClick = longClick,
             modifier = modifier,
         )
         WidgetType.POWERAMP -> LiveMediaWidgetCard(
@@ -99,8 +104,8 @@ fun HomeWidgetView(
             fallbackHeadline = title ?: "Poweramp",
             fallbackSubtitle = "Local library",
             packageFilter = listOf("com.maxmpz.audioplayer"),
-            onClick = onClick,
-            onLongClick = onLongClick,
+            onClick = click,
+            onLongClick = longClick,
             modifier = modifier,
             showProgress = true,
         )
@@ -110,8 +115,8 @@ fun HomeWidgetView(
             headline = title ?: "Twitch",
             subtitle = "Live channels",
             detail = "Browse streams",
-            onClick = onClick,
-            onLongClick = onLongClick,
+            onClick = click,
+            onLongClick = longClick,
             modifier = modifier,
         )
         WidgetType.SPOTIFY -> LiveMediaWidgetCard(
@@ -120,8 +125,8 @@ fun HomeWidgetView(
             fallbackHeadline = title ?: "Spotify",
             fallbackSubtitle = "Tap to open",
             packageFilter = listOf("com.spotify.music"),
-            onClick = onClick,
-            onLongClick = onLongClick,
+            onClick = click,
+            onLongClick = longClick,
             modifier = modifier,
             showProgress = true,
         )
@@ -129,32 +134,32 @@ fun HomeWidgetView(
             palette = palette,
             app = app,
             title = title ?: appLabel ?: "Music",
-            onClick = onClick,
-            onLongClick = onLongClick,
-            onDoubleClick = onDoubleClick,
+            onClick = click,
+            onLongClick = longClick,
+            onDoubleClick = doubleClick,
             modifier = modifier,
         )
         WidgetType.VIDEO -> VideoPlayerWidgetCard(
             palette = palette,
             app = app,
             title = title ?: appLabel ?: "Video",
-            onClick = onClick,
-            onLongClick = onLongClick,
-            onDoubleClick = onDoubleClick,
+            onClick = click,
+            onLongClick = longClick,
+            onDoubleClick = doubleClick,
             modifier = modifier,
         )
         WidgetType.GAME -> GameWidgetCard(
             palette = palette,
             app = app,
             title = title ?: appLabel ?: "Game",
-            onClick = onClick,
-            onLongClick = onLongClick,
-            onDoubleClick = onDoubleClick,
+            onClick = click,
+            onLongClick = longClick,
+            onDoubleClick = doubleClick,
             modifier = modifier,
         )
-        WidgetType.SEARCH -> SearchWidgetCard(palette, onClick, modifier, title, onLongClick, onDoubleClick)
-        WidgetType.CALENDAR -> CalendarWidgetCard(palette, onClick, modifier, title, onLongClick, onDoubleClick)
-        WidgetType.NOTES -> NotesWidgetCard(palette, onClick, modifier, title, onLongClick, onDoubleClick)
+        WidgetType.SEARCH -> SearchWidgetCard(palette, click, modifier, title, longClick, doubleClick)
+        WidgetType.CALENDAR -> CalendarWidgetCard(palette, click, modifier, title, longClick, doubleClick)
+        WidgetType.NOTES -> NotesWidgetCard(palette, click, modifier, title, longClick, doubleClick)
     }
 }
 
@@ -168,6 +173,7 @@ private fun BlankAppWidgetCard(
     modifier: Modifier = Modifier,
     onLongClick: (() -> Unit)? = null,
     onDoubleClick: (() -> Unit)? = null,
+    enableGestures: Boolean = true,
 ) {
     val context = LocalContext.current
     val meta = remember(app?.packageName) {
@@ -190,16 +196,16 @@ private fun BlankAppWidgetCard(
             .clip(RoundedCornerShape(16.dp))
             .background(palette.surface.copy(alpha = 0.72f))
             .then(
-                if (onDoubleClick != null) {
-                    Modifier.pointerInput(Unit) {
+                when {
+                    !enableGestures -> Modifier
+                    onDoubleClick != null -> Modifier.pointerInput(Unit) {
                         detectTapGestures(
                             onTap = { onClick() },
                             onDoubleTap = { onDoubleClick() },
                             onLongPress = { onLongClick?.invoke() },
                         )
                     }
-                } else {
-                    Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick)
+                    else -> Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick)
                 },
             )
             .padding(10.dp),
@@ -462,7 +468,7 @@ private fun LiveMediaWidgetCard(
                     if (matched.isPlaying) "⏸" else "▶",
                     color = Color.White,
                     fontSize = 16.sp,
-                    modifier = Modifier.clickable { MediaNotificationListener.playPause() },
+                    modifier = Modifier.clickable { MediaNotificationListener.playPause(matched.packageName) },
                 )
             }
         }
@@ -731,20 +737,20 @@ private fun MusicPlayerWidgetCard(
                 "⏮",
                 color = Color.White,
                 fontSize = 14.sp,
-                modifier = Modifier.clickable { MediaNotificationListener.skipPrevious() },
+                modifier = Modifier.clickable { MediaNotificationListener.skipPrevious(matched.packageName ?: app?.packageName) },
             )
             Text(
                 if (matched.isPlaying) "⏸" else "▶",
                 color = Color.White,
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
-                modifier = Modifier.clickable { MediaNotificationListener.playPause() },
+                modifier = Modifier.clickable { MediaNotificationListener.playPause(matched.packageName ?: app?.packageName) },
             )
             Text(
                 "⏭",
                 color = Color.White,
                 fontSize = 14.sp,
-                modifier = Modifier.clickable { MediaNotificationListener.skipNext() },
+                modifier = Modifier.clickable { MediaNotificationListener.skipNext(matched.packageName ?: app?.packageName) },
             )
             Box(
                 modifier = Modifier
